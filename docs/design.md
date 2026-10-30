@@ -50,12 +50,14 @@
 - `decoders.yaml` 모양(설계 예시):
   | 로그 종류 | prematch | regex (요지) | fields |
   |---|---|---|---|
-  | sshd 실패 | `Failed password for` | `for (invalid user )?(.*?) from (\S+) port (\d+)` | `invalid`, `user`, `srcip`, `srcport` |
+  | sshd 실패 | `Failed password for` | `for (invalid user )?(.+?) from (\S+) port (\d+)` | `invalid`, `user`, `srcip`, `srcport` |
   | sshd 성공 | `Accepted password for` | `for (\S+) from (\S+) port (\d+)` | `user`, `srcip`, `srcport` |
   | sshd 없는 사용자 | `Invalid user` | `Invalid user (\S*) from (\S+)` | `user`, `srcip` |
+  | `sshd_other` (나머지 sshd) | (앞의 3개에 안 걸린 sshd 줄) | `^(.*)$` | `message` |
   | access.log | (없음, 모든 줄) | `^(\S+) \S+ \S+ \[([^\]]+)\] "(\S+) (\S+) [^"]*" (\d{3}) (\S+)` | `srcip`, `time`, `method`, `path`, `status`, `bytes` |
-  - 사용자 이름 앞에 공백이 한 칸 더 있는 줄이 있어서(예: `invalid user  0101`) 사용자 칸은 `\S+`가 아니라 `(.*?)`로 잡습니다.
+  - 사용자 이름 앞에 공백이 한 칸 더 있는 줄이 있어서(예: `invalid user  0101`) 사용자 칸은 `\S+`가 아니라 최소 한 글자인 `(.+?)`로 잡습니다.
   - 줄 앞의 시간·호스트·프로그램 이름(`Dec 10 06:55:48 LabSZ sshd[24200]:`)은 공통 앞부분 정규식 하나로 먼저 잘라 냅니다.
+  - 앞의 3개 규칙(실패·성공·없는 사용자)에 안 맞은 나머지 sshd 줄은 4번째 규칙 `sshd_other`로 잡아 OpenSSH_2k.log 2,000줄이 모두 레코드가 되게 합니다. 경고 규칙에는 앞의 3종 이벤트만 씁니다.
 - 완료 확인 방법: OpenSSH_2k.log → 레코드 2,000건, 그중 "sshd 실패" 520건. apache_logs → 10,000건, `status=404` 213건. security.evtx → EventID 4624가 583건. 숫자는 `grep -c`, `awk`로 센 값과 같아야 합니다.
 - 기능: 3번(로그/패킷 분리), 8번(열 고르기)의 바탕.
 
@@ -70,7 +72,8 @@
   | 시간 | `ts` (UTC 초) → 날짜·시각으로 바꿈 | - |
   | 출발지/목적지 | `dpkt.ethernet.Ethernet(buf)`를 풀어 IP/IPv6의 `src`/`dst` | 빈칸 |
   | 포트 | TCP/UDP의 `sport`, `dport` | 빈칸 |
-  | 종류(프로토콜) | 가장 안쪽 계층 이름 (예: DNS) | Raw |
+  | 전송 계층(`transport`) | IP 안쪽 객체 타입 확인(`isinstance(..., dpkt.tcp.TCP)` / `dpkt.udp.UDP`) → `"TCP"` / `"UDP"` / `"other"` (요약 문자열로 판단하지 않음) | `"other"` |
+  | 종류(`protocol`) | 가장 안쪽 응용 계층 이름 (예: `"DNS"`) | Raw |
   | TCP 플래그 | TCP `flags` | 빈칸 |
   | 길이 | `len(buf)` | - |
   | 요약 | 계층 이름으로 우리가 만든 한 줄 요약 | - |
@@ -86,11 +89,18 @@
 ### 3단계: 대화(연결) 요약 만들기
 - 목표: 패킷을 대화로 묶는다.
 - 입력: 2단계 패킷 레코드.
-- 방법: dpkt에는 Scapy `sessions()` 같은 대화 묶기 기능이 없어서 직접 만듦. (프로토콜, 작은 쪽 IP:포트, 큰 쪽 IP:포트)로 정렬한 양방향 키로 묶음. Zeek conn.log 방식.
-- 번호: 키가 처음 나온 순서대로 0부터 `tcp.stream` / `udp.stream` 번호를 붙임(Wireshark가 0부터 처음 본 순서로 매긴다고 보고 맞춤. tshark로 실제 비교는 확인 못 함, 구현 때 확인). uid는 우리 도구용 고유 문자열.
-- 출력: 대화 레코드(uid, stream 번호, 시작 시각, 지속 시간, 패킷 수, 바이트 수, 상태, history 비슷한 흐름 글자).
+- 방법: dpkt에는 Scapy `sessions()` 같은 대화 묶기 기능이 없어서 직접 만듦. TCP/UDP 구분은 패킷 레코드의 `transport` 필드로 판단함. 양방향 패킷이 하나로 묶이도록 내부 묶음 키는 `(transport, 정렬한 (IP, 포트) 쌍)`을 씀.
+- 대화 레코드 형식:
+  - `uid`: `"tcp-N"` / `"udp-N"`. 전송 계층(`transport`)별로 따로 0부터 첫 패킷이 나온 순서대로 번호를 붙임(Wireshark `tcp.stream` / `udp.stream` 번호 매기는 방식과 맞춤. tshark로 실제 비교는 확인 못 함, 구현 때 확인).
+  - `protocol`: 전송 계층 이름(`"TCP"` / `"UDP"`).
+  - `service`: 첫 패킷의 응용 계층 이름(예: `"DNS"`). Zeek `conn.log`의 `service` 열과 같은 역할.
+  - `a`, `b`: `a`는 대화를 먼저 시작한 쪽(originator, 첫 패킷의 출발지), `b`는 응답한 쪽(responder, 첫 패킷의 목적지). 내부 키는 양방향 매칭을 위해 `(IP, 포트)` 쌍을 정렬해 쓰지만, 화면과 레코드의 `a`/`b` 순서는 문자열 정렬이 아니라 첫 패킷 기준(문자열 정렬은 클라이언트가 응답자 자리에 갈 수 있어 초보자에게 헷갈리므로 버림, Zeek orig/resp 방식과 같음).
+  - `start`: 시간대 정보가 붙은(tz-aware) UTC 기준 ISO 8601 문자열(예: `2005-03-30T02:47:46.946Z` 형태). 화면 표시 때 현지 시간으로 바꿈.
+  - `history`: Zeek 방식 흐름 문자열. 대문자는 `a`(시작한 쪽), 소문자는 `b`(응답한 쪽). TCP는 Zeek처럼 `S`, `H`(SYN-ACK), `A`, `D`, `F`, `R` 글자를 쓰고, UDP는 방향별 데이터 유무만 `D`/`d`로 적음(예: 요청+응답이면 `"Dd"`).
+  - `state`: 코드 값만 넣음(한국어 설명은 필드에 넣지 않고 `hints.yaml`/`help.yaml`에 둠). TCP는 Zeek `conn_state` 일부(`S0`, `SF`, `REJ`, `RSTO`, `RSTR`, `OTH`), UDP는 양방향 모두 보이면 `SF`, 한쪽만 보이면 `S0`.
+  - 그 외: 지속 시간, 패킷 수, 바이트 수.
 - 범위: TCP 재조립은 하지 않음(dpkt는 TCP 재조립을 기본으로 하지 않음).
-- 완료 확인 방법: dns.cap → 대화 8개, 가장 큰 대화 192.168.170.8:32795 ↔ 192.168.170.20:53 = 24패킷. 두 숫자 모두 Scapy로 확인한 값이라 dpkt로는 확인 못 함. tshark가 있으면 `tshark -r dns.cap -q -z conv,udp` 대화 수와 같아야 함.
+- 완료 확인 방법: dns.cap → 대화 8개(모두 `protocol="UDP"`, `service="DNS"`), 가장 큰 대화 192.168.170.8:32795 ↔ 192.168.170.20:53 = 24패킷. 이 숫자들은 Scapy로 확인한 값이라 dpkt로는 확인 못 함. 대화별 실제 `state`/`history` 값도 구현 코드로 돌리기 전이라 확인 못 함. tshark가 있으면 `tshark -r dns.cap -q -z conv,udp` 대화 수와 같아야 함.
 - 기능: 7번(대화 요약 탭).
 
 ### 4단계: 웹 화면 기본 (Streamlit)
