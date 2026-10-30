@@ -71,7 +71,7 @@ def record_time(
             return naive.replace(tzinfo=tz)
 
         return None
-    except (TypeError, ValueError, OverflowError):
+    except (TypeError, ValueError, OverflowError, OSError):
         return None
 
 

@@ -81,3 +81,10 @@ def test_build_timeline_preserves_line_order(dns_cap: Path) -> None:
     points = build_timeline(records, "pcap", TimeSettings())
     assert [point.number for point in points] == [record.line_number for record in records]
     assert all(point.source == "packet" for point in points)
+
+
+def test_record_time_out_of_range_epoch_returns_none() -> None:
+    from elpa.models import Record
+
+    bad = Record(line_number=1, kind="DNS", fields={"time": "1e30"}, raw="1")
+    assert record_time(bad, "pcap", TimeSettings()) is None

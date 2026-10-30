@@ -290,16 +290,15 @@ st.caption("지원: auth.log(sshd) · access.log · .evtx · .pcap/.pcapng · �
 with st.sidebar:
     st.subheader("시간 연결")
     log_tz = st.text_input("로그 시간대 (log_tz)", value="Asia/Seoul")
-    year_raw = st.text_input("sshd 연도", value="")
+    sshd_year = st.number_input("sshd 연도", min_value=1970, max_value=2100, value=None, step=1)
     st.caption("연도는 직접 고른 값")
     window_seconds = int(
-        st.number_input("앞뒤 초 (window_seconds)", min_value=0, value=5, step=1)
+        st.number_input("앞뒤 초 (window_seconds)", min_value=0, max_value=86400, value=5, step=1)
     )
 
-sshd_year = int(year_raw) if year_raw.strip().isdigit() else None
 time_settings = TimeSettings(
     log_tz=log_tz or "Asia/Seoul",
-    sshd_year=sshd_year,
+    sshd_year=int(sshd_year) if sshd_year is not None else None,
     window_seconds=window_seconds,
 )
 
