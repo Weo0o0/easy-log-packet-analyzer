@@ -131,3 +131,16 @@
   Suricata 룰로 쓰면 (참고용):
     alert tcp any any -> $HOME_NET any (msg:"포트 스캔 의심"; flags:S; detection_filter: track by_src, count 10, seconds 60, unique_on dst_port; classtype:attempted-recon; sid:1000002; rev:1;)
   ```
+
+## 추가 반영 (Sigma·Wazuh 분석, [analysis/log-tools.md](analysis/log-tools.md))
+
+### 경고 카드에 중요도·오해 주의·신뢰도 표시 (4번 기능 보강)
+- 하는 일: 경고 카드 맨 위에 `level`(높음/중간/낮음)과 신뢰도(`근거 충분` / `더 확인 필요`)를 보여 줌. 아래에 `오해 주의`(문제가 아닐 수 있는 경우)를 적음.
+- 이유: 근거는 항상 보여 줌 (답변 14). 초보가 경고를 곧바로 "공격"으로 믿지 않게 함 (5번 기능과 같은 목적).
+- 예시 화면:
+  ```
+  ⚠ 같은 IP의 SSH 로그인 실패 반복   [level: 중간]  [근거 충분]
+  ...
+  오해 주의: 비밀번호를 잊은 사용자가 여러 번 틀려도 같은 경고가 납니다.
+  ```
+- 설계 위치: [design.md](design.md) 7단계. 로그를 필드로 나누는 정규식 표(`decoders.yaml`)는 1단계.
