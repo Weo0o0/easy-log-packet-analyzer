@@ -43,7 +43,14 @@
   - 공식 문서도 같은 연결을 tshark로 열어 바이트 수를 대조함.
 - uid로 연결: conn.log의 uid로 http.log, dns.log 등 다른 로그에서 같은 연결을 찾음.
 - http.log, dns.log, ssl.log 필드 세부: 확인 못 함 (페이지 열지 못함).
-- zeek-cut(로그에서 원하는 열만 뽑는 도구): https://github.com/zeek/zeek-aux 저장소 존재만 확인, 사용법 세부는 확인 못 함.
+- zeek-cut(로그에서 원하는 열만 뽑는 명령): 확인함.
+  - 위치: 예전에는 zeek-aux 저장소에 있었으나, zeek-aux CHANGES(2026-03-02)에 "zeek-cut은 zeek 저장소로 옮김"이라고 적혀 있고, 현재 소스는 zeek 저장소 `tools/zeek-cut/`에 있음.
+  - 하는 일: 표준 입력으로 받은 ASCII(TSV) Zeek 로그에서 지정한 열만 출력. 열 이름은 로그 맨 위 `#fields` 줄에 있음. 열 이름을 안 주면 전부 출력. 적은 순서대로 출력하므로 열 순서도 바꿀 수 있음.
+  - 맨 위 `#`로 시작하는 형식 헤더 줄이 있어야 동작. JSON 로그는 지원 안 함. 압축 로그는 `zcat`으로 풀어서 넘김.
+  - 주요 옵션: `-d` 시간을 읽기 쉬운 형식으로(현지 시간), `-u` 같은 변환을 UTC로, `-D`/`-U <형식>` 시간 형식 직접 지정, `-c` 첫 헤더 블록 포함, `-C` 모든 헤더 포함, `-m`/`-M` 헤더를 열 이름만 간단히, `-n` 지정한 열을 빼고 출력, `-F` 출력 구분 문자 변경.
+  - 예: `cat conn.log | zeek-cut -d ts id.orig_h id.orig_p`
+  - 출처: https://github.com/zeek/zeek/blob/master/tools/zeek-cut/README.md , https://github.com/zeek/zeek/blob/master/tools/zeek-cut/zeek-cut.1 , https://github.com/zeek/zeek-aux/blob/master/CHANGES
+
 
 ## Wireshark와 비교
 | | Wireshark | Zeek |

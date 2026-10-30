@@ -97,3 +97,21 @@
   흐름: S h A D a d F f → 연결 시작(SYN) → 응답(SYN-ACK) → 확인(ACK) → 데이터 주고받음 → 양쪽 종료(FIN)
   Wireshark에서는: tcp.stream eq 0
   ```
+
+### 8. 열 고르기 + 같은 명령 보기
+- 하는 일: 로그·패킷·대화 탭에서 보고 싶은 열을 체크박스로 고름. 시간 열은 읽기 쉬운 현지 시간(Asia/Seoul 등 설정)으로 바꿔 보여 줌. 고른 열만 CSV(쉼표로 구분한 표 파일)로 내보내기. 고를 때마다 같은 일을 하는 명령을 옆에 보여 줌.
+- 이유: 명령을 보면서 자연스럽게 외우기 (답변 10), Wireshark·실무 도구에 빨리 적응 (답변 16). zeek-cut, tshark `-T fields`가 하는 "원하는 칸만 뽑기"를 화면으로 먼저 익힘.
+- 예시 화면 (패킷 탭에서 시간, 출발지, 목적지, 목적지 포트 선택):
+  ```
+  ☑ 시간  ☑ 출발지 IP  ☑ 목적지 IP  ☐ 프로토콜  ☑ 목적지 포트     [CSV로 내보내기]
+  tshark로는:   tshark -r sample.pcap -T fields -e frame.time -e ip.src -e ip.dst -e tcp.dstport -E header=y -E separator=,
+  ```
+  대화 탭 (Zeek conn.log를 읽었을 때):
+  ```
+  zeek-cut으로는: cat conn.log | zeek-cut -d ts id.orig_h id.resp_h id.resp_p
+  ```
+  로그 탭 (access.log, 기본 combined 형식):
+  ```
+  awk로는: awk '{print $1, $4, $9}' access.log      # IP, 시간, 상태 코드
+  ```
+- 주의 문구: awk의 칸 번호는 로그 형식에 따라 다를 수 있음 (특히 auth.log). 화면에 "형식이 다르면 칸 번호가 바뀝니다"를 같이 표시.
