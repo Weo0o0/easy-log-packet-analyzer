@@ -9,7 +9,8 @@
 
 ## 라이브러리와 환경
 - Python 3.11 이상에서 동작합니다.
-- 저장소 라이선스는 MIT로 유지합니다.
+- 저장소 라이선스는 MIT로 유지합니다. Streamlit 1.66.1은 Apache-2.0 라이선스입니다.
+- `requirements` 라이브러리 목록에 Streamlit 1.66.1을 둡니다.
 - pcap 읽기에는 dpkt(BSD 라이선스)를 씁니다. BSD는 MIT와 같은 허용적(permissive) 라이선스라 함께 써도 됩니다.
 - dpkt: pcap·pcapng 파일을 읽어 패킷을 계층(이더넷, IP, TCP 등)으로 나눠 주는 Python 라이브러리.
 - pcapng 지원이 dpkt에서 제대로 되는지는 확인 못 함.
@@ -34,7 +35,7 @@
 | 파일 | 내용 | 참고한 도구 |
 |---|---|---|
 | `decoders.yaml` | 로그 종류별 정규식과 필드 이름 | Wazuh 디코더 |
-| `help.yaml` | 열·필드 "?" 설명 | - |
+| `help.yaml` | 열·필드 "?" 설명과 상태 코드의 한 줄 설명 | - |
 | `filters.yaml` | 필터·열 이름 → Wireshark/tshark/zeek-cut/awk 번역 | Wireshark, Zeek |
 | `rules.yaml` | 경고 규칙 | Zeek Notice, Suricata, Sigma, Wazuh |
 | `hints.yaml` | 초보 오해 힌트 | Zeek Weird |
@@ -77,13 +78,13 @@
   | TCP 플래그 | TCP `flags` | 빈칸 |
   | 길이 | `len(buf)` | - |
   | 요약 | 계층 이름으로 우리가 만든 한 줄 요약 | - |
-  | 원본 | 번호 (상세 보기에서 16진수 덤프와 계층별 필드) | - |
+  | 원본 | 번호 (상세 보기에서 패킷 필드와 원본 값) | - |
 - 오류 처리:
   - pcap이 아닌 파일(`ValueError`) → "pcap 파일이 아닙니다" 안내, 아무것도 표시 안 함.
   - 잘린 파일(`dpkt.dpkt.NeedData`, `dpkt.dpkt.UnpackError`) → 읽은 만큼 표시하고 "파일 끝이 잘려 N개까지만 읽음" 안내.
   - 모르는 링크 타입 → Raw로 읽고 안내.
   - 10MB 초과 → 읽지 않고 안내.
-- 완료 확인 방법: dns.cap → 패킷 38개, 모두 종류 DNS, UDP 53번 포트 38개, 1번 요약 `Ethernet / IP / UDP / DNS`, 1번 시간 1112172466.496046(UTC 초). 이 숫자들은 Scapy로 확인했던 값이라 dpkt로는 확인 못 함. 앞 500바이트만 남긴 dns.cap 사본 → 4개 + 잘림 안내. 텍스트 파일 → 오류 안내. (tshark 비교는 tshark 설치 후)
+- 완료 확인 방법: dns.cap → 패킷 38개, 모두 종류 DNS, UDP 53번 포트 38개, 1번 요약 `Ethernet / IP / UDP / DNS`, 1번 시간 1112172466.496046(UTC 초). 이 숫자들은 dpkt로 확인했습니다. 앞 500바이트만 남긴 dns.cap 사본 → 4개 + 잘림 안내. 텍스트 파일 → 오류 안내. (tshark 비교는 tshark 설치 후)
 - 기능: 3번, 2번.
 
 ### 3단계: 대화(연결) 요약 만들기
@@ -100,14 +101,18 @@
   - `state`: 코드 값만 넣음(한국어 설명은 필드에 넣지 않고 `hints.yaml`/`help.yaml`에 둠). TCP는 Zeek `conn_state` 일부(`S0`, `SF`, `REJ`, `RSTO`, `RSTR`, `OTH`), UDP는 양방향 모두 보이면 `SF`, 한쪽만 보이면 `S0`.
   - 그 외: 지속 시간, 패킷 수, 바이트 수.
 - 범위: TCP 재조립은 하지 않음(dpkt는 TCP 재조립을 기본으로 하지 않음).
-- 완료 확인 방법: dns.cap → 대화 8개(모두 `protocol="UDP"`, `service="DNS"`), 가장 큰 대화 192.168.170.8:32795 ↔ 192.168.170.20:53 = 24패킷. 이 숫자들은 Scapy로 확인한 값이라 dpkt로는 확인 못 함. 대화별 실제 `state`/`history` 값도 구현 코드로 돌리기 전이라 확인 못 함. tshark가 있으면 `tshark -r dns.cap -q -z conv,udp` 대화 수와 같아야 함.
+- 완료 확인 방법: dns.cap → 대화 8개(모두 `protocol="UDP"`, `service="DNS"`), 가장 큰 대화 192.168.170.8:32795 ↔ 192.168.170.20:53 = 24패킷. 이 숫자들은 dpkt로 확인했습니다. 대화별 실제 `state`/`history` 값은 확인 못 함. tshark가 있으면 `tshark -r dns.cap -q -z conv,udp` 대화 수와 같아야 함.
 - 기능: 7번(대화 요약 탭).
 
 ### 4단계: 웹 화면 기본 (Streamlit)
 - 목표: 파일을 올리고 탭에서 표로 본다.
 - 입력: 1~3단계 레코드.
-- 출력: 로그 탭, 패킷 탭, 대화 요약 탭. 대화 한 줄을 누르면 패킷 탭에서 그 uid의 패킷 강조. 열·필드마다 "?" 도움말(`help.yaml`).
-- 완료 확인 방법: OpenSSH_2k.log와 dns.cap을 올리면 세 탭에 각각 2,000줄, 38줄(dpkt 확인 못 함), 3단계 대화 수만큼 보인다. "?"를 누르면 `help.yaml` 문구가 나온다.
+- 실제 API: `read_text_log(path, log_type)` (`log_type`은 `sshd` 또는 `access`), `read_evtx(path)`, `read_pcap(path)`은 `ParseResult(records, unparsed, notices)`를 반환합니다. `Record(line_number, kind, fields, raw)`가 공통 레코드입니다. `build_conversations(records)`는 `Conversation(uid, protocol, service, stream, a, b, start, duration, packets, bytes, state, history, packet_numbers)` 목록을 만듭니다. `read_pcap`과 `build_conversations`는 `elpa/__init__.py`에서 내보냅니다.
+- 출력: 로그 탭, 패킷 탭, 대화 요약 탭. 대화 선택 행은 `st.dataframe(on_select='rerun', selection_mode='single-row')`로 고르고, 해당 uid의 패킷을 강조합니다. 열·필드마다 "?" 도움말은 `help.yaml`을 씁니다.
+- 업로드 파일은 `tempfile.NamedTemporaryFile(delete=False, suffix=원래_확장자)`에 쓰고 그 경로를 reader에 전달합니다. `finally`에서 임시 파일을 지우며, 다른 곳에 보관하거나 보내지 않습니다.
+- `.streamlit/config.toml`: `server.maxUploadSize = 10` (MB), `server.address = "127.0.0.1"`, `browser.gatherUsageStats = false`.
+- `help.yaml`에는 상태 코드(`S0`, `SF`, `REJ`, `RSTO`, `RSTR`, `OTH`)와 열 이름의 한국어 한 줄 설명을 둡니다. 파일이나 설명이 없으면 코드만 `설명 없음`과 함께 표시합니다. `hints.yaml`은 7단계, `filters.yaml`은 6단계에서 만듭니다.
+- 완료 확인 방법: OpenSSH_2k.log와 dns.cap을 올리면 세 탭에 각각 2,000줄, 38줄, 8개 대화가 보입니다. "?"를 누르면 `help.yaml` 문구가 나옵니다.
 - 기능: 1번(도움 가이드), 3번, 7번.
 
 ### 5단계: 시간 연결 보기
