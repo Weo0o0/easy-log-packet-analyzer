@@ -99,7 +99,7 @@ def build_packet_table(
     return [
         {
             "번호": record.line_number,
-            "표시": "강조" if record.line_number in highlighted else "",
+            "표시": "[!] 강조" if record.line_number in highlighted else "",
             "시간": _local_packet_time(record.fields.get("time")),
             "출발지": record.fields.get("src") or "",
             "목적지": record.fields.get("dst") or "",
@@ -338,13 +338,18 @@ with packet_tab:
             styled = frame.style.apply(
                 lambda row: [
                     "background-color: #dbeafe; color: #102a43"
-                    if row["표시"] == "강조"
+                    if "강조" in str(row["표시"])
                     else ""
                 ]
                 * len(row),
                 axis=1,
             )
-            st.dataframe(styled, width="stretch", hide_index=True)
+            st.dataframe(
+                styled,
+                width="stretch",
+                hide_index=True,
+                column_config=_columns(HELP, list(packet_rows[0])),
+            )
             st.info(f"대화 {chosen_conversation.uid}의 패킷을 강조해 두었습니다")
         elif packet_records or not packet_result.notices:
             _render_table(packet_rows, HELP)
@@ -357,8 +362,8 @@ with packet_tab:
             record = packet_records[selected_packet]
             with st.expander(f"#{record.line_number} {record.fields.get('summary') or record.kind}"):
                 st.write({key: value for key, value in record.fields.items() if value is not None})
-                st.write(f"Wireshark에서는: frame.number == {record.line_number}")
-                st.write(f"원본 값: {record.raw}")
+                st.text(f"Wireshark에서는: frame.number == {record.line_number}")
+                st.text(f"원본 값: {record.raw}")
     else:
         st.info("아직 파일이 없습니다")
         st.write("로그나 pcap 파일을 올리면 여기에 요약이 나옵니다.")
