@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import socket
 from typing import Any
 
@@ -146,7 +147,8 @@ def read_pcap(path: str) -> ParseResult:
                     notices.append(f"파일 끝이 잘려 {len(records)}개까지만 읽음")
                     break
                 hdr = ph(hbuf)
-                buf = fh.read(hdr.caplen)
+                remaining = max(0, os.fstat(fh.fileno()).st_size - fh.tell())
+                buf = fh.read(min(hdr.caplen, remaining))
                 truncated = len(buf) < hdr.caplen
                 ts = hdr.tv_sec + (hdr.tv_usec / divisor)
                 line_number += 1

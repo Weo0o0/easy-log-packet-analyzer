@@ -65,6 +65,16 @@ def test_truncated_file_returns_read_packets_and_notice(
     assert any("잘려" in n and "4개" in n for n in result.notices)
 
 
+def test_huge_packet_caplen_is_bounded_and_warned(tmp_path: Path) -> None:
+    path = tmp_path / "huge-caplen.pcap"
+    path.write_bytes(_global_header(1) + struct.pack("<IIII", 0, 0, 0xFFFFFFFF, 0xFFFFFFFF))
+
+    result = _read_pcap(path)
+
+    assert result.records == []
+    assert any("잘려" in n for n in result.notices)
+
+
 def test_not_pcap_returns_no_records_and_notice(tmp_path: Path) -> None:
     path = tmp_path / "not.pcap"
     path.write_bytes(b"this is not a pcap file\n")
