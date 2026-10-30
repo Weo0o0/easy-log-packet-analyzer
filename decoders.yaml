@@ -1,0 +1,31 @@
+# Wazuh-style: prematch → regex → fields. Applied after optional prefix strip.
+sshd:
+  # Common syslog sshd prefix: "Dec 10 06:55:48 LabSZ sshd[24200]: "
+  prefix: '^[A-Z][a-z]{2}\s+\d{1,2}\s+\d{2}:\d{2}:\d{2}\s+\S+\s+sshd\[\d+\]:\s*'
+  decoders:
+    - name: sshd 실패
+      prematch: 'Failed password for'
+      # anchored at body start so overlapping starts are never retried (F1-a)
+      regex: '^(?:message repeated \d+ times: \[ )?Failed password for (invalid user )?(.+?) from (\S+) port (\d+)'
+      fields: [invalid, user, srcip, srcport]
+    - name: sshd 성공
+      prematch: 'Accepted password for'
+      regex: 'for (\S+) from (\S+) port (\d+)'
+      fields: [user, srcip, srcport]
+    - name: sshd 없는 사용자
+      prematch: 'Invalid user'
+      regex: 'Invalid user (\S*) from (\S+)'
+      fields: [user, srcip]
+    # Catch-all so every sshd-prefix line becomes a record (OpenSSH_2k = 2000).
+    - name: sshd
+      prematch: ''
+      regex: '^(.*)$'
+      fields: [message]
+
+access:
+  prefix: ''
+  decoders:
+    - name: access.log
+      prematch: ''
+      regex: '^(\S+) \S+ \S+ \[([^\]]+)\] "(\S+) (\S+) [^"]*" (\d{3}) (\S+)'
+      fields: [srcip, time, method, path, status, bytes]
