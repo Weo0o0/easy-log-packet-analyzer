@@ -17,3 +17,4 @@ class Record:
 class ParseResult:
     records: list[Record]
     unparsed: int  # 읽지 못한 줄
+    notices: list[str] = field(default_factory=list)  # 안내 메시지

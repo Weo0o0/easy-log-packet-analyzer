@@ -16,6 +16,9 @@ SAMPLE_URLS = {
     "security.evtx": "https://raw.githubusercontent.com/williballenthin/python-evtx/c0007441657899c39180de10a2be1a0e43dbeaf9/tests/data/security.evtx",
 }
 
+# samples.md links a wiki upload, so there is no commit SHA to pin.
+DNS_CAP_URL = "https://wiki.wireshark.org/uploads/__moin_import__/attachments/SampleCaptures/dns.cap"
+
 
 def _fetch(url: str) -> bytes:
     with urllib.request.urlopen(url, timeout=120) as resp:  # noqa: S310
@@ -25,13 +28,13 @@ def _fetch(url: str) -> bytes:
     return data
 
 
-def _download(name: str) -> Path:
+def _download(name: str, url: str | None = None) -> Path:
     SAMPLES_DIR.mkdir(parents=True, exist_ok=True)
     dest = SAMPLES_DIR / name
     if dest.exists() and 0 < dest.stat().st_size <= MAX_DOWNLOAD_BYTES:
         return dest
     # Untrusted remote input — store only under gitignored .samples/
-    dest.write_bytes(_fetch(SAMPLE_URLS[name]))
+    dest.write_bytes(_fetch(url or SAMPLE_URLS[name]))
     return dest
 
 
@@ -48,3 +51,11 @@ def apache_log() -> Path:
 @pytest.fixture(scope="session")
 def security_evtx() -> Path:
     return _download("security.evtx")
+
+
+@pytest.fixture(scope="session")
+def dns_cap() -> Path:
+    try:
+        return _download("dns.cap", DNS_CAP_URL)
+    except (OSError, TimeoutError) as exc:
+        pytest.skip(f"dns.cap unavailable (offline?): {exc}")
