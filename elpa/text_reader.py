@@ -52,11 +52,13 @@ def read_text_log(path: str, log_type: str) -> ParseResult:
 
     records: list[Record] = []
     unparsed = 0
+    unparsed_lines: list[int] = []  # bounded by the 10MB file cap
     with open_checked(path) as f:
         lines = iter_bounded_lines(f)
         for line_number, line in enumerate(lines, start=1):
             if len(line) > _MAX_LINE_BYTES:
                 unparsed += 1
+                unparsed_lines.append(line_number)
                 continue
             raw = line.decode("utf-8", errors="replace").rstrip("\n\r")
             body = raw
@@ -64,6 +66,7 @@ def read_text_log(path: str, log_type: str) -> ParseResult:
                 m = prefix.match(raw)
                 if not m:
                     unparsed += 1
+                    unparsed_lines.append(line_number)
                     continue
                 body = raw[m.end() :]
 
@@ -86,5 +89,6 @@ def read_text_log(path: str, log_type: str) -> ParseResult:
                 break
             if not matched:
                 unparsed += 1
+                unparsed_lines.append(line_number)
 
-    return ParseResult(records=records, unparsed=unparsed)
+    return ParseResult(records=records, unparsed=unparsed, unparsed_lines=unparsed_lines)

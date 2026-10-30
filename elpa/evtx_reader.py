@@ -53,16 +53,21 @@ def read_evtx(path: str) -> ParseResult:
         data = read_bounded(f)
     records: list[Record] = []
     unparsed = 0
+    unparsed_lines: list[int] = []
+    line_number = 0
     try:
         log = _BytesEvtx(data)
         for line_number, record in enumerate(log.records(), start=1):
+            record_number = record.record_num()
             try:
                 fields = _fields_from_xml(record.xml())
             except Exception:
                 unparsed += 1
+                unparsed_lines.append(record_number or line_number)
                 continue
             if not fields.get("EventID"):
                 unparsed += 1
+                unparsed_lines.append(record_number or line_number)
                 continue
             records.append(
                 Record(
@@ -74,7 +79,9 @@ def read_evtx(path: str) -> ParseResult:
             )
     except Exception:
         unparsed += 1
+        unparsed_lines.append(line_number + 1)
     if not records and unparsed == 0:
         # python-evtx can silently yield nothing for a bad/truncated file.
         unparsed = 1
-    return ParseResult(records=records, unparsed=unparsed)
+        unparsed_lines.append(1)
+    return ParseResult(records=records, unparsed=unparsed, unparsed_lines=unparsed_lines)
