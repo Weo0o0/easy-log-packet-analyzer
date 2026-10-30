@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from elpa.models import Record
@@ -30,8 +29,7 @@ def _record(
         line_number=number,
         kind=protocol,
         fields={
-            "time": datetime(2026, 1, 1, tzinfo=timezone.utc)
-            + timedelta(seconds=seconds),
+            "time": f"{1767225600 + seconds:.6f}",
             "src": src,
             "dst": dst,
             "sport": sport,
@@ -62,7 +60,7 @@ def test_dns_cap_conversations(dns_cap: Path) -> None:
     assert len(conversations) == 8
     assert all((c.uid, c.a, c.b, c.packets, c.state, c.history) == row for c, row in zip(conversations, expected, strict=True))
     assert all(c.protocol == "UDP" and c.service == "DNS" for c in conversations)
-    assert conversations[0].start == "2005-03-30T02:47:46.496046Z"
+    assert conversations[0].start == "2005-03-30T08:47:46.496Z"
 
 
 def test_conversation_fields_and_udp_directionality() -> None:
@@ -94,7 +92,7 @@ def test_conversation_fields_and_udp_directionality() -> None:
         "SF",
     )
     assert udp.bytes == 130
-    assert udp.start == "2026-01-01T00:00:00Z"
+    assert udp.start == "2026-01-01T00:00:00.000Z"
     assert udp.duration == 1
     assert (tcp.uid, tcp.protocol, tcp.service, tcp.a, tcp.b) == (
         "tcp-0",
