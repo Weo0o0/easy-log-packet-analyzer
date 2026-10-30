@@ -50,6 +50,9 @@
 ### 6단계: 규칙 파일 기반 경고와 오해 힌트
 - `rules.yaml`: 경고 규칙. 각 규칙에 조건, 왜 이상한가, 다음 확인 단계, Wireshark 필터를 적음.
 - 규칙 형식은 Zeek Notice를 참고: 종류(note), 메시지(msg), 대상(src), 숫자(n), 중복 억제 기준(identifier + 시간).
+- Suricata에서 가져온 칸: `id`(sid처럼 고유 번호) + `version`(rev), `msg`, `category`(classtype을 쉬운 한국어로, 예: 정찰 시도), `severity`(높음/중간/낮음), `count` / `seconds` / `track`(누구 기준으로 셀지: 출발지·목적지·대화), `unique`(서로 다른 값 세기, 예: 목적지 포트).
+- 규칙마다 참고용 `suricata_example`(룰 텍스트)을 적어 경고 카드에 읽기 전용으로 표시. 실행하지 않음.
+- 경고마다 패킷 번호(Suricata `pcap_cnt`처럼)를 남겨 Wireshark `frame.number == N`으로 바로 찾게 함.
 - "특이하지만 공격 아님"(Zeek Weird와 비슷)은 경고가 아니라 오해 힌트로 표시.
 - `hints.yaml`: 초보 오해 힌트 (예: 재전송, RST, DNS 실패).
 - 경고 카드에는 항상 근거(원본 줄/패킷)를 링크.
@@ -67,6 +70,9 @@
 ### 8단계 (선택, 나중): Zeek 로그 읽기
 - Zeek가 만든 conn.log(TSV/JSON)를 4번째 로그 형식으로 읽어 대화 요약 탭에 표시. 간단할 때만.
 
+### 9단계 (선택, 나중): Suricata eve.json 경보 읽기
+- eve.json에서 `event_type` 이 `alert` 인 줄만 읽어 경고 카드 형식으로 표시 (signature → 메시지, category, severity, `pcap_cnt` → 패킷 번호). 간단할 때만.
+
 ## 하지 않을 것
 - 실시간 캡처, 자동 차단, 대용량 처리, AI 설명, SIEM 연동.
 
@@ -78,3 +84,4 @@
 ## 참고
 - [analysis/wireshark.md](analysis/wireshark.md)
 - [analysis/zeek.md](analysis/zeek.md)
+- [analysis/suricata.md](analysis/suricata.md)
