@@ -8,6 +8,7 @@ import pytest
 
 from elpa import read_evtx, read_text_log
 from elpa.limits import MAX_FILE_BYTES
+from elpa.models import MAX_UNPARSED_LINES
 
 
 def test_openssh_2k(openssh_log: Path) -> None:
@@ -15,6 +16,7 @@ def test_openssh_2k(openssh_log: Path) -> None:
     assert len(result.records) == 2000
     assert sum(1 for r in result.records if r.kind == "sshd 실패") == 520
     assert result.unparsed == 0
+    assert result.unparsed_lines == []
     assert all(r.line_number >= 1 for r in result.records)
 
 
@@ -23,17 +25,46 @@ def test_apache_logs(apache_log: Path) -> None:
     assert len(result.records) == 10000
     assert sum(1 for r in result.records if r.fields.get("status") == "404") == 213
     assert result.unparsed == 0
+    assert result.unparsed_lines == []
 
 
 def test_security_evtx(security_evtx: Path) -> None:
     result = read_evtx(str(security_evtx))
     assert sum(1 for r in result.records if r.fields.get("EventID") == "4624") == 583
     assert result.unparsed == 0
+    assert result.unparsed_lines == []
     # EventID / time / IpAddress / TargetUserName present on a 4624
     sample = next(r for r in result.records if r.fields.get("EventID") == "4624")
     assert "time" in sample.fields
     assert "IpAddress" in sample.fields
     assert "TargetUserName" in sample.fields
+
+
+@pytest.mark.parametrize("log_type", ["sshd", "access"])
+def test_unparsed_lines_keep_source_numbers(tmp_path: Path, log_type: str) -> None:
+    path = tmp_path / ("auth.log" if log_type == "sshd" else "access.log")
+    valid = (
+        "Dec 10 06:55:48 host sshd[1]: Failed password for root from 203.0.113.5 port 22 ssh2"
+        if log_type == "sshd"
+        else '203.0.113.5 - - [10/Oct/2000:13:55:36 -0700] "GET / HTTP/1.0" 200 2326'
+    )
+    path.write_text(f"{valid}\nmalformed\n{valid}\nnot parseable\n", encoding="utf-8")
+    result = read_text_log(str(path), log_type)
+    assert result.unparsed_lines == [2, 4]
+    assert result.unparsed == len(result.unparsed_lines)
+    assert result.unparsed_lines_truncated is False
+
+
+def test_unparsed_line_numbers_are_bounded(tmp_path: Path) -> None:
+    path = tmp_path / "newlines.log"
+    line_count = 1_100_000
+    with path.open("wb") as f:
+        f.write(b"\n" * line_count)
+
+    result = read_text_log(str(path), "sshd")
+    assert result.unparsed == line_count
+    assert len(result.unparsed_lines) == MAX_UNPARSED_LINES
+    assert result.unparsed_lines_truncated is True
 
 
 def test_unparsed_and_malformed_lines_are_counted(tmp_path: Path) -> None:
@@ -48,6 +79,7 @@ def test_unparsed_and_malformed_lines_are_counted(tmp_path: Path) -> None:
     assert result.records[0].kind == "sshd 실패"
     assert result.records[0].fields["srcip"] == "203.0.113.5"
     assert result.unparsed == 1
+    assert result.unparsed_lines == [2]
 
     access = tmp_path / "access.log"
     access.write_text(
@@ -59,6 +91,7 @@ def test_unparsed_and_malformed_lines_are_counted(tmp_path: Path) -> None:
     assert len(result.records) == 1
     assert result.records[0].fields["status"] == "200"
     assert result.unparsed == 1
+    assert result.unparsed_lines == [2]
 
 
 def test_oversized_file_rejected(tmp_path: Path) -> None:
