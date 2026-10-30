@@ -115,3 +115,19 @@
   awk로는: awk '{print $1, $4, $9}' access.log      # IP, 시간, 상태 코드
   ```
 - 주의 문구: awk의 칸 번호는 로그 형식에 따라 다를 수 있음 (특히 auth.log). 화면에 "형식이 다르면 칸 번호가 바뀝니다"를 같이 표시.
+
+## 추가 반영 (Suricata 분석, [analysis/suricata.md](analysis/suricata.md))
+
+### 경고 카드에 "Suricata 룰로 쓰면" 보기 (학습용, 읽기 전용)
+- 하는 일: 경고 카드 아래에 같은 뜻의 Suricata 룰 예시를 보여 주고 각 칸(msg, sid, threshold 등)을 한 줄로 설명. 우리 도구는 이 룰을 실행하지 않음.
+- 이유: 명령과 형식을 보면서 외우기 (답변 10), 실무 도구 적응 (답변 16).
+- 예시 화면:
+  ```
+  ⚠ 짧은 시간에 여러 포트 접속 (포트 스캔 의심)   [분류: 정찰 시도]  [규칙 R-002 v1]
+  왜 이상한가: 203.0.113.5 가 60초 안에 서로 다른 포트 12개에 연결을 시도했습니다.
+  근거: 패킷 #15, #16, #18 ... [원본 보기]
+  다음 확인 단계: 1) 응답(SYN-ACK)이 온 포트가 있는지  2) 같은 IP의 로그 기록
+  Wireshark에서는: ip.src == 203.0.113.5 && tcp.flags.syn == 1 && tcp.flags.ack == 0
+  Suricata 룰로 쓰면 (참고용):
+    alert tcp any any -> $HOME_NET any (msg:"포트 스캔 의심"; flags:S; detection_filter: track by_src, count 10, seconds 60, unique_on dst_port; classtype:attempted-recon; sid:1000002; rev:1;)
+  ```
