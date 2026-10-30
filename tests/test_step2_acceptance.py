@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timedelta
+import dpkt
 from pathlib import Path
 
 import pytest
@@ -81,3 +82,21 @@ def test_dns_cap_first_packet(dns_cap: Path) -> None:
     assert _utc_epoch(first.fields["time"]) == pytest.approx(
         EXPECTED_FIRST_TS, abs=1e-6
     )
+
+
+def test_dns_cap_pcapng_matches_pcap_records_and_conversations(
+    dns_cap: Path, tmp_path: Path
+) -> None:
+    pcapng_path = tmp_path / "dns.pcapng"
+    with dns_cap.open("rb") as source, pcapng_path.open("wb") as target:
+        writer = dpkt.pcapng.Writer(target, snaplen=65535)
+        for ts, packet in dpkt.pcap.Reader(source):
+            writer.writepkt(packet, ts=ts)
+
+    pcap_result = _read_pcap(dns_cap)
+    pcapng_result = _read_pcap(pcapng_path)
+    from elpa.conversations import build_conversations
+
+    assert len(pcapng_result.records) == 38
+    assert [r.fields for r in pcapng_result.records] == [r.fields for r in pcap_result.records]
+    assert build_conversations(pcapng_result.records) == build_conversations(pcap_result.records)
