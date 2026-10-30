@@ -7,6 +7,13 @@
 대상: 공부하는 취업 준비생. 몇 MB 크기의 공개 샘플 로그와 pcap을 웹 화면에서 보며 기초를 익히고 Wireshark로 넘어가게 돕습니다.
 이 문서는 설계만 담습니다. 코드는 없습니다.
 
+## 라이브러리와 환경
+- Python 3.11 이상에서 동작합니다.
+- 저장소 라이선스는 MIT로 유지합니다.
+- pcap 읽기에는 dpkt(BSD 라이선스)를 씁니다. BSD는 MIT와 같은 허용적(permissive) 라이선스라 함께 써도 됩니다.
+- dpkt: pcap·pcapng 파일을 읽어 패킷을 계층(이더넷, IP, TCP 등)으로 나눠 주는 Python 라이브러리.
+- pcapng 지원이 dpkt에서 제대로 되는지는 확인 못 함.
+
 ## 용어
 - 파서: 글자나 바이트를 읽어 구조(필드)로 바꾸는 코드.
 - 레코드: 로그 한 줄 또는 패킷 하나를 정리한 데이터 한 건.
@@ -52,45 +59,45 @@
 - 완료 확인 방법: OpenSSH_2k.log → 레코드 2,000건, 그중 "sshd 실패" 520건. apache_logs → 10,000건, `status=404` 213건. security.evtx → EventID 4624가 583건. 숫자는 `grep -c`, `awk`로 센 값과 같아야 합니다.
 - 기능: 3번(로그/패킷 분리), 8번(열 고르기)의 바탕.
 
-### 2단계: pcap 읽기 (Scapy)
+### 2단계: pcap 읽기 (dpkt)
 - 목표: 패킷을 레코드로 바꾼다. 분석: [analysis/scapy.md](analysis/scapy.md).
 - 입력: pcap/pcapng 파일. 크기 제한 10MB(설계 값, 구현 때 dns.cap보다 큰 공개 샘플로 속도를 재고 조정).
-- 방법: `PcapReader`로 한 개씩 읽음(`rdpcap`은 전체를 메모리에 올려서 안 씀). 읽는 순서대로 1부터 번호를 붙여 Wireshark `frame.number`와 맞춤.
+- 방법: `dpkt.pcap.Reader`(pcap) 또는 `dpkt.pcapng.Reader`(pcapng)로 한 개씩 읽음(파일 전체를 메모리에 올리지 않음). `dpkt.ethernet.Ethernet(buf)`로 이더넷부터 계층을 차례로 해석. 읽는 순서대로 1부터 번호를 붙여 Wireshark `frame.number`와 맞춤.
 - 레코드 필드 대응:
-  | 우리 필드 | Scapy에서 | 없으면 |
+  | 우리 필드 | dpkt에서 | 없으면 |
   |---|---|---|
   | 번호 | 읽은 순서(1부터) | - |
-  | 시간 | `pkt.time` (UTC 초) → 날짜·시각으로 바꿈 | - |
-  | 출발지/목적지 | `pkt[IP].src/dst` 또는 `pkt[IPv6].src/dst` | 빈칸 |
-  | 포트 | `pkt[TCP]` / `pkt[UDP]`의 `sport`, `dport` | 빈칸 |
-  | 종류(프로토콜) | `pkt.lastlayer().name` (예: DNS) | Raw |
-  | TCP 플래그 | `pkt[TCP].flags` | 빈칸 |
-  | 길이 | `len(pkt)` | - |
-  | 요약 | `pkt.summary()` | - |
-  | 원본 | 번호 (상세 보기에서 `hexdump`, `show` 결과) | - |
+  | 시간 | `ts` (UTC 초) → 날짜·시각으로 바꿈 | - |
+  | 출발지/목적지 | `dpkt.ethernet.Ethernet(buf)`를 풀어 IP/IPv6의 `src`/`dst` | 빈칸 |
+  | 포트 | TCP/UDP의 `sport`, `dport` | 빈칸 |
+  | 종류(프로토콜) | 가장 안쪽 계층 이름 (예: DNS) | Raw |
+  | TCP 플래그 | TCP `flags` | 빈칸 |
+  | 길이 | `len(buf)` | - |
+  | 요약 | 계층 이름으로 우리가 만든 한 줄 요약 | - |
+  | 원본 | 번호 (상세 보기에서 16진수 덤프와 계층별 필드) | - |
 - 오류 처리:
-  - pcap이 아닌 파일(`Scapy_Exception: Not a supported capture file`) → "pcap 파일이 아닙니다" 안내, 아무것도 표시 안 함.
-  - 잘린 파일("packet has been truncated" 경고) → 읽은 만큼 표시하고 "파일 끝이 잘려 N개까지만 읽음" 안내.
+  - pcap이 아닌 파일(`ValueError`) → "pcap 파일이 아닙니다" 안내, 아무것도 표시 안 함.
+  - 잘린 파일(`dpkt.dpkt.NeedData`, `dpkt.dpkt.UnpackError`) → 읽은 만큼 표시하고 "파일 끝이 잘려 N개까지만 읽음" 안내.
   - 모르는 링크 타입 → Raw로 읽고 안내.
   - 10MB 초과 → 읽지 않고 안내.
-- 완료 확인 방법: dns.cap → 패킷 38개, 모두 종류 DNS, UDP 53번 포트 38개, 1번 요약 `Ether / IP / UDP / DNS Qry b'google.com.'`, 1번 시간 1112172466.496046(UTC 초). 앞 500바이트만 남긴 dns.cap 사본 → 4개 + 잘림 안내. 텍스트 파일 → 오류 안내. (Mac mini scapy 2.8.0에서 이 숫자를 직접 확인함. tshark 비교는 tshark 설치 후)
+- 완료 확인 방법: dns.cap → 패킷 38개, 모두 종류 DNS, UDP 53번 포트 38개, 1번 요약 `Ethernet / IP / UDP / DNS`, 1번 시간 1112172466.496046(UTC 초). 이 숫자들은 Scapy로 확인했던 값이라 dpkt로는 확인 못 함. 앞 500바이트만 남긴 dns.cap 사본 → 4개 + 잘림 안내. 텍스트 파일 → 오류 안내. (tshark 비교는 tshark 설치 후)
 - 기능: 3번, 2번.
 
 ### 3단계: 대화(연결) 요약 만들기
 - 목표: 패킷을 대화로 묶는다.
 - 입력: 2단계 패킷 레코드.
-- 방법: Scapy `sessions()`는 방향별이라 쓰지 않음. (프로토콜, 작은 쪽 IP:포트, 큰 쪽 IP:포트)로 정렬한 양방향 키를 직접 만들어 묶음. Zeek conn.log 방식.
+- 방법: dpkt에는 Scapy `sessions()` 같은 대화 묶기 기능이 없어서 직접 만듦. (프로토콜, 작은 쪽 IP:포트, 큰 쪽 IP:포트)로 정렬한 양방향 키로 묶음. Zeek conn.log 방식.
 - 번호: 키가 처음 나온 순서대로 0부터 `tcp.stream` / `udp.stream` 번호를 붙임(Wireshark가 0부터 처음 본 순서로 매긴다고 보고 맞춤. tshark로 실제 비교는 확인 못 함, 구현 때 확인). uid는 우리 도구용 고유 문자열.
 - 출력: 대화 레코드(uid, stream 번호, 시작 시각, 지속 시간, 패킷 수, 바이트 수, 상태, history 비슷한 흐름 글자).
-- 범위: TCP 재조립은 하지 않음(Scapy TCPSession은 일부 프로토콜만 지원).
-- 완료 확인 방법: dns.cap → 대화 8개(Scapy `sessions()` 방향별 16묶음을 합친 수, 직접 확인). 가장 큰 대화 192.168.170.8:32795 ↔ 192.168.170.20:53 = 24패킷. tshark가 있으면 `tshark -r dns.cap -q -z conv,udp` 대화 수와 같아야 함.
+- 범위: TCP 재조립은 하지 않음(dpkt는 TCP 재조립을 기본으로 하지 않음).
+- 완료 확인 방법: dns.cap → 대화 8개, 가장 큰 대화 192.168.170.8:32795 ↔ 192.168.170.20:53 = 24패킷. 두 숫자 모두 Scapy로 확인한 값이라 dpkt로는 확인 못 함. tshark가 있으면 `tshark -r dns.cap -q -z conv,udp` 대화 수와 같아야 함.
 - 기능: 7번(대화 요약 탭).
 
 ### 4단계: 웹 화면 기본 (Streamlit)
 - 목표: 파일을 올리고 탭에서 표로 본다.
 - 입력: 1~3단계 레코드.
 - 출력: 로그 탭, 패킷 탭, 대화 요약 탭. 대화 한 줄을 누르면 패킷 탭에서 그 uid의 패킷 강조. 열·필드마다 "?" 도움말(`help.yaml`).
-- 완료 확인 방법: OpenSSH_2k.log와 dns.cap을 올리면 세 탭에 각각 2,000줄, 38줄, 3단계 대화 수만큼 보인다. "?"를 누르면 `help.yaml` 문구가 나온다.
+- 완료 확인 방법: OpenSSH_2k.log와 dns.cap을 올리면 세 탭에 각각 2,000줄, 38줄(dpkt 확인 못 함), 3단계 대화 수만큼 보인다. "?"를 누르면 `help.yaml` 문구가 나온다.
 - 기능: 1번(도움 가이드), 3번, 7번.
 
 ### 5단계: 시간 연결 보기

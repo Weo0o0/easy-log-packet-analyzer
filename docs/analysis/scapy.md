@@ -1,5 +1,7 @@
 # 패킷 라이브러리 분석: Scapy
 
+> 이 문서는 분석 기록입니다. 프로젝트는 Scapy 대신 dpkt(BSD)를 쓰기로 했습니다. 그래서 아래 GPL 라이선스 우려는 해당 없음.
+
 > 앞선 분석: [wireshark.md](wireshark.md) · [zeek.md](zeek.md) · [suricata.md](suricata.md) · [log-tools.md](log-tools.md)
 
 Scapy는 우리 도구가 pcap을 읽을 때 쓸 Python 라이브러리입니다. 이 문서는 Scapy가 pcap을 어떻게 읽고 패킷을 어떻게 나누는지 정리합니다. 우리는 **읽기만** 합니다. 패킷을 만들거나 보내는 기능은 다루지 않습니다. 설계만 다루며 코드는 없습니다.
