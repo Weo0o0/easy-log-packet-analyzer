@@ -2,11 +2,12 @@ from __future__ import annotations
 
 import os
 import socket
+import struct
 from typing import Any
 
 import dpkt
 
-from elpa.limits import open_checked
+from elpa.limits import MAX_FILE_BYTES, open_checked
 from elpa.models import ParseResult, Record
 
 _PCAPNG_MAGIC = b"\x0a\x0d\x0d\x0a"
@@ -46,6 +47,20 @@ def _try_dns(payload: bytes) -> dpkt.dns.DNS | None:
         return dpkt.dns.DNS(payload)
     except (dpkt.dpkt.NeedData, dpkt.dpkt.UnpackError, ValueError):
         return None
+
+
+class _BoundedReader:
+    """Keep dpkt's block-sized reads bounded by the upload limit."""
+
+    def __init__(self, file):
+        self.file = file
+        self.short_read = False
+
+    def read(self, size: int = -1) -> bytes:
+        data = self.file.read(min(size, MAX_FILE_BYTES) if size >= 0 else MAX_FILE_BYTES)
+        if size > len(data) and data:
+            self.short_read = True
+        return data
 
 
 def _parse_packet(buf: bytes, ethernet: bool) -> tuple[str, dict[str, str | None]]:
@@ -110,7 +125,7 @@ def _parse_packet(buf: bytes, ethernet: bool) -> tuple[str, dict[str, str | None
 
 
 def read_pcap(path: str) -> ParseResult:
-    """Read a classic pcap file into Records. pcapng is not supported yet."""
+    """Read a pcap or pcapng file into Records."""
     try:
         f = open_checked(path)
     except ValueError as e:
@@ -121,11 +136,33 @@ def read_pcap(path: str) -> ParseResult:
     with f:
         magic = f.read(4)
         if magic == _PCAPNG_MAGIC:
-            return ParseResult(
-                records=[],
-                unparsed=0,
-                notices=["pcapng는 아직 지원 안 함"],
-            )
+            f.seek(0)
+            bounded = _BoundedReader(f)
+            try:
+                reader = dpkt.pcapng.Reader(bounded)
+            except (ValueError, dpkt.dpkt.NeedData, dpkt.dpkt.UnpackError, struct.error, UnicodeDecodeError):
+                return ParseResult(records=[], unparsed=0, notices=["pcap 파일이 아닙니다"])
+            ethernet = reader.datalink() == dpkt.pcap.DLT_EN10MB
+            if not ethernet:
+                notices.append("모르는 링크 타입이라 Raw로 읽었습니다")
+            try:
+                for line_number, (ts, buf) in enumerate(reader, 1):
+                    try:
+                        protocol, fields = _parse_packet(buf, ethernet)
+                    except (dpkt.dpkt.NeedData, dpkt.dpkt.UnpackError):
+                        notices.append(f"파일 끝이 잘려 {len(records)}개까지만 읽음")
+                        break
+                    records.append(Record(
+                        line_number=line_number,
+                        kind=protocol,
+                        fields={"time": f"{ts:.6f}", **fields},
+                        raw=str(line_number),
+                    ))
+            except (ValueError, dpkt.dpkt.NeedData, dpkt.dpkt.UnpackError, struct.error, UnicodeDecodeError):
+                notices.append(f"파일 끝이 잘려 {len(records)}개까지만 읽음")
+            if bounded.short_read and not any("잘려" in notice for notice in notices):
+                notices.append(f"파일 끝이 잘려 {len(records)}개까지만 읽음")
+            return ParseResult(records=records, unparsed=0, notices=notices)
         f.seek(0)
         try:
             reader = dpkt.pcap.Reader(f)
