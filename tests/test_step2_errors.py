@@ -30,6 +30,17 @@ def _pcap(packets: list[bytes], network: int = 1) -> bytes:
     return _global_header(network) + b"".join(_record(p) for p in packets)
 
 
+def _pcapng_block(kind: int, body: bytes) -> bytes:
+    length = 12 + len(body)
+    return struct.pack("<II", kind, length) + body + struct.pack("<I", length)
+
+
+def _pcapng_prefix(idb_options: bytes = b"\0\0\0\0") -> bytes:
+    shb = _pcapng_block(0x0A0D0D0A, struct.pack("<IHHq", 0x1A2B3C4D, 1, 0, -1))
+    idb = _pcapng_block(1, struct.pack("<HHI", 1, 0, 65535) + idb_options)
+    return shb + idb
+
+
 def _udp_frame() -> bytes:
     payload = b"hello"
     udp = struct.pack("!HHHH", 12345, 53, 8 + len(payload), 0) + payload
@@ -124,6 +135,29 @@ def test_truncated_pcapng_returns_partial_records_and_notice(tmp_path: Path) -> 
 
     assert len(result.records) == 1
     assert any("잘려" in n and "1개" in n for n in result.notices)
+
+
+def test_pcapng_zero_length_timestamp_resolution_is_rejected(tmp_path: Path) -> None:
+    path = tmp_path / "empty-tsresol.pcapng"
+    path.write_bytes(_pcapng_prefix(struct.pack("<HH", 9, 0) + b"\0\0\0\0"))
+
+    result = _read_pcap(path)
+
+    assert result.records == []
+    assert any("pcap 파일이 아닙니다" in notice for notice in result.notices)
+
+
+def test_pcapng_invalid_utf8_comment_is_truncated(tmp_path: Path) -> None:
+    path = tmp_path / "invalid-comment.pcapng"
+    packet = _udp_frame()
+    options = struct.pack("<HH", 1, 1) + b"\xff\0\0\0" + b"\0\0\0\0"
+    epb = struct.pack("<IIIII", 0, 0, 0, len(packet), len(packet)) + packet + b"\0" * (-len(packet) % 4) + options
+    path.write_bytes(_pcapng_prefix() + _pcapng_block(6, epb))
+
+    result = _read_pcap(path)
+
+    assert result.records == []
+    assert any("잘려" in notice and "0개" in notice for notice in result.notices)
 
 
 def test_oversized_file_is_rejected_with_notice(tmp_path: Path) -> None:

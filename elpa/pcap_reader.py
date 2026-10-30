@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import socket
+import struct
 from typing import Any
 
 import dpkt
@@ -139,7 +140,7 @@ def read_pcap(path: str) -> ParseResult:
             bounded = _BoundedReader(f)
             try:
                 reader = dpkt.pcapng.Reader(bounded)
-            except (ValueError, dpkt.dpkt.NeedData, dpkt.dpkt.UnpackError):
+            except (ValueError, dpkt.dpkt.NeedData, dpkt.dpkt.UnpackError, struct.error, UnicodeDecodeError):
                 return ParseResult(records=[], unparsed=0, notices=["pcap 파일이 아닙니다"])
             ethernet = reader.datalink() == dpkt.pcap.DLT_EN10MB
             if not ethernet:
@@ -157,7 +158,7 @@ def read_pcap(path: str) -> ParseResult:
                         fields={"time": f"{ts:.6f}", **fields},
                         raw=str(line_number),
                     ))
-            except (ValueError, dpkt.dpkt.NeedData, dpkt.dpkt.UnpackError):
+            except (ValueError, dpkt.dpkt.NeedData, dpkt.dpkt.UnpackError, struct.error, UnicodeDecodeError):
                 notices.append(f"파일 끝이 잘려 {len(records)}개까지만 읽음")
             if bounded.short_read and not any("잘려" in notice for notice in notices):
                 notices.append(f"파일 끝이 잘려 {len(records)}개까지만 읽음")
