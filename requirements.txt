@@ -1,5 +1,6 @@
-# Runtime: Apache-2.0 (python-evtx), MIT (PyYAML) — both MIT-compatible.
+# Runtime: Apache-2.0 (python-evtx), MIT (PyYAML), BSD (dpkt) — MIT-compatible.
 python-evtx==0.8.1
 PyYAML==6.0.2
+dpkt==1.9.8
 # Tests
 pytest==8.3.5
