@@ -14,6 +14,7 @@ FIELD_KEYS = {
     "dst",
     "sport",
     "dport",
+    "transport",
     "protocol",
     "flags",
     "length",
@@ -40,11 +41,11 @@ def _conversation_key(record) -> tuple[str, tuple[str, str], tuple[str, str]]:
     fields = record.fields
     endpoints = sorted(
         (
-            f"{fields['src']}:{fields['sport']}",
-            f"{fields['dst']}:{fields['dport']}",
+            (fields["src"], fields["sport"]),
+            (fields["dst"], fields["dport"]),
         )
     )
-    return fields["protocol"], endpoints[0], endpoints[1]
+    return fields["transport"], endpoints[0], endpoints[1]
 
 
 def test_dns_cap_counts_and_numbering(dns_cap: Path) -> None:
@@ -54,6 +55,7 @@ def test_dns_cap_counts_and_numbering(dns_cap: Path) -> None:
     assert len(result.records) == 38
     assert [r.line_number for r in result.records] == list(range(1, 39))
     assert all(r.fields["protocol"] == "DNS" for r in result.records)
+    assert all(r.fields["transport"] == "UDP" for r in result.records)
     assert all(r.fields["src"] and r.fields["dst"] for r in result.records)
     assert all(
         53 in (int(r.fields["sport"]), int(r.fields["dport"]))
@@ -72,6 +74,7 @@ def test_dns_cap_first_packet(dns_cap: Path) -> None:
     assert int(first.fields["sport"]) == 32795
     assert int(first.fields["dport"]) == 53
     assert first.fields["protocol"] == "DNS"
+    assert first.fields["transport"] == "UDP"
     assert first.fields["flags"] in (None, "")
     assert int(first.fields["length"]) == 70
     assert first.fields["summary"] == "Ethernet / IP / UDP / DNS"

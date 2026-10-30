@@ -54,6 +54,7 @@ def _parse_packet(buf: bytes, ethernet: bool) -> tuple[str, dict[str, str | None
         "dst": None,
         "sport": None,
         "dport": None,
+        "transport": "other",
         "protocol": "Raw",
         "flags": None,
         "length": str(len(buf)),
@@ -69,6 +70,7 @@ def _parse_packet(buf: bytes, ethernet: bool) -> tuple[str, dict[str, str | None
 
     names: list[str] = []
     src = dst = sport = dport = flags = None
+    transport = "other"
     cur: Any = eth
     while True:
         names.append(_layer_name(cur))
@@ -76,6 +78,7 @@ def _parse_packet(buf: bytes, ethernet: bool) -> tuple[str, dict[str, str | None
             src = _inet_str(cur.src)
             dst = _inet_str(cur.dst)
         if isinstance(cur, (dpkt.tcp.TCP, dpkt.udp.UDP)):
+            transport = "TCP" if isinstance(cur, dpkt.tcp.TCP) else "UDP"
             sport = str(cur.sport)
             dport = str(cur.dport)
             if isinstance(cur, dpkt.tcp.TCP):
@@ -98,6 +101,7 @@ def _parse_packet(buf: bytes, ethernet: bool) -> tuple[str, dict[str, str | None
         "dst": dst,
         "sport": sport,
         "dport": dport,
+        "transport": transport,
         "protocol": protocol,
         "flags": flags,
         "length": str(len(buf)),

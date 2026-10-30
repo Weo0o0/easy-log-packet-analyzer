@@ -93,6 +93,7 @@ def test_unknown_link_type_is_raw_with_notice(tmp_path: Path) -> None:
 
     assert len(result.records) == 1
     assert result.records[0].fields["protocol"] == "Raw"
+    assert result.records[0].fields["transport"] == "other"
     assert any("링크" in n for n in result.notices)
 
 
