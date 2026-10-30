@@ -12,9 +12,16 @@ import yaml
 
 from elpa import build_conversations, read_evtx, read_pcap, read_text_log
 from elpa.models import ParseResult, Record
+from elpa.timeline import (
+    TimeSettings,
+    build_timeline,
+    numbers_near,
+    record_time,
+)
 
 HELP_PATH = Path(__file__).resolve().with_name("help.yaml")
 SEOUL = ZoneInfo("Asia/Seoul")
+_SSHD_PREFIX = re.compile(r"^([A-Z][a-z]{2}\s+\d{1,2}\s+\d{2}:\d{2}:\d{2})")
 
 
 def load_help() -> dict:
@@ -42,23 +49,33 @@ def read_upload(upload, reader) -> ParseResult:
             Path(path).unlink(missing_ok=True)
 
 
-def _log_time(record: Record) -> str:
-    fields = record.fields
-    if fields.get("time"):
-        value = str(fields["time"])
-        try:
-            parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
-        except ValueError:
-            try:
-                parsed = datetime.strptime(value, "%d/%b/%Y:%H:%M:%S %z")
-            except ValueError:
-                return value
-        return parsed.astimezone(SEOUL).strftime("%Y-%m-%d %H:%M:%S")
-    match = re.match(r"^([A-Z][a-z]{2}\s+\d{1,2}\s+\d{2}:\d{2}:\d{2})", record.raw)
-    return match.group(1) if match else ""
+def _format_when(when: datetime | None, *, subsecond: bool = False) -> str:
+    if when is None:
+        return ""
+    local = when.astimezone(SEOUL)
+    if subsecond:
+        return local.strftime("%Y-%m-%d %H:%M:%S.%f")[:-3]
+    return local.strftime("%Y-%m-%d %H:%M:%S")
 
 
-def build_log_table(records: list[Record]) -> list[dict[str, str | int]]:
+def _log_time_display(record: Record, kind_group: str, settings: TimeSettings) -> str:
+    when = record_time(record, kind_group, settings)
+    if when is not None:
+        return _format_when(when)
+    if kind_group == "sshd":
+        match = _SSHD_PREFIX.match(record.raw)
+        return match.group(1) if match else ""
+    value = record.fields.get("time")
+    return str(value) if value else ""
+
+
+def build_log_table(
+    records: list[Record],
+    kind_group: str,
+    settings: TimeSettings,
+    highlighted: set[int] | None = None,
+) -> list[dict[str, str | int]]:
+    highlighted = highlighted or set()
     rows = []
     for record in records:
         fields = record.fields
@@ -73,7 +90,8 @@ def build_log_table(records: list[Record]) -> list[dict[str, str | int]]:
         rows.append(
             {
                 "번호": record.line_number,
-                "시간": _log_time(record),
+                "표시": "[!] 강조" if record.line_number in highlighted else "",
+                "시간": _log_time_display(record, kind_group, settings),
                 "출발지": fields.get("srcip") or "",
                 "사용자": fields.get("user") or fields.get("TargetUserName") or "",
                 "종류": record.kind,
@@ -87,9 +105,9 @@ def build_log_table(records: list[Record]) -> list[dict[str, str | int]]:
 def _local_packet_time(value: str | None) -> str:
     if not value:
         return ""
-    return datetime.fromtimestamp(float(value), timezone.utc).astimezone(SEOUL).strftime(
-        "%Y-%m-%d %H:%M:%S.%f"
-    )[:-3]
+    return _format_when(
+        datetime.fromtimestamp(float(value), timezone.utc), subsecond=True
+    )
 
 
 def build_packet_table(
@@ -212,27 +230,53 @@ def _columns(help_data: dict, names: list[str]) -> dict:
     }
 
 
-def _render_table(rows: list[dict], help_data: dict) -> None:
-    if not rows:
-        _show_empty_records()
-        return
-    st.dataframe(
-        pd.DataFrame(rows),
-        width="stretch",
-        hide_index=True,
-        column_config=_columns(help_data, list(rows[0])),
+def _style_highlights(frame: pd.DataFrame):
+    return frame.style.apply(
+        lambda row: [
+            "background-color: #dbeafe; color: #102a43"
+            if "강조" in str(row["표시"])
+            else ""
+        ]
+        * len(row),
+        axis=1,
     )
 
 
-def _summary_time(log_records: list[Record], packet_records: list[Record]) -> str:
+def _render_selectable_table(rows: list[dict], help_data: dict, *, key: str):
+    if not rows:
+        _show_empty_records()
+        return None
+    frame = pd.DataFrame(rows)
+    has_highlight = "표시" in frame.columns and frame["표시"].astype(str).str.contains(
+        "강조"
+    ).any()
+    return st.dataframe(
+        _style_highlights(frame) if has_highlight else frame,
+        width="stretch",
+        hide_index=True,
+        column_config=_columns(help_data, list(rows[0])),
+        on_select="rerun",
+        selection_mode="single-row",
+        key=key,
+    )
+
+
+def _summary_time(
+    log_records: list[Record],
+    packet_records: list[Record],
+    log_kind: str,
+    settings: TimeSettings,
+) -> str:
     values = []
     for record in packet_records:
-        if record.fields.get("time"):
-            values.append(_local_packet_time(record.fields["time"]))
+        when = record_time(record, "pcap", settings)
+        text = _format_when(when, subsecond=True)
+        if text:
+            values.append(text)
     for record in log_records:
-        value = _log_time(record)
-        if value and re.match(r"\d{4}-\d\d-\d\d ", value):
-            values.append(value)
+        text = _log_time_display(record, log_kind, settings)
+        if text and re.match(r"\d{4}-\d\d-\d\d ", text):
+            values.append(text)
     if not values:
         return "시간 범위를 확인할 수 없습니다."
     return f"시간 범위 {min(values)} ~ {max(values)} (Asia/Seoul)"
@@ -242,6 +286,22 @@ st.set_page_config(page_title="easy-log-packet-analyzer", layout="wide")
 st.title("easy-log-packet-analyzer")
 st.write("로그와 패킷을 한곳에서, 쉬운 한국어로")
 st.caption("지원: auth.log(sshd) · access.log · .evtx · .pcap/.pcapng · 최대 10MB")
+
+with st.sidebar:
+    st.subheader("시간 연결")
+    log_tz = st.text_input("로그 시간대 (log_tz)", value="Asia/Seoul")
+    year_raw = st.text_input("sshd 연도", value="")
+    st.caption("연도는 직접 고른 값")
+    window_seconds = int(
+        st.number_input("앞뒤 초 (window_seconds)", min_value=0, value=5, step=1)
+    )
+
+sshd_year = int(year_raw) if year_raw.strip().isdigit() else None
+time_settings = TimeSettings(
+    log_tz=log_tz or "Asia/Seoul",
+    sshd_year=sshd_year,
+    window_seconds=window_seconds,
+)
 
 log_upload = st.file_uploader("로그 파일 올리기", type=["log", "txt", "evtx"])
 log_type = "sshd"
@@ -277,6 +337,13 @@ log_records = log_result.records if log_result else []
 packet_records = packet_result.records if packet_result else []
 conversations = build_conversations(packet_records)
 chosen_conversation = None
+log_kind = (
+    "evtx"
+    if log_upload and Path(log_upload.name).suffix.lower() == ".evtx"
+    else log_type
+)
+log_points = build_timeline(log_records, log_kind, time_settings)
+packet_points = build_timeline(packet_records, "pcap", time_settings)
 
 st.subheader("요약")
 metrics = st.columns(4)
@@ -285,7 +352,7 @@ metrics[1].metric("패킷", len(packet_records))
 metrics[2].metric("대화", len(conversations))
 metrics[3].metric("읽지 못한 줄", log_result.unparsed if log_result else 0)
 st.caption("로그·패킷·대화의 전체 건수입니다.")
-st.write(_summary_time(log_records, packet_records))
+st.write(_summary_time(log_records, packet_records, log_kind, time_settings))
 
 log_tab, packet_tab, conversation_tab = st.tabs(["로그 탭", "패킷 탭", "대화 요약 탭"])
 with log_tab:
@@ -301,7 +368,30 @@ with log_tab:
             )
             st.caption("지원 형식 보기 · 다른 파일 올리기")
         else:
-            _render_table(build_log_table(log_records), HELP)
+            time_center = st.session_state.get("time_center")
+            time_from = st.session_state.get("time_link_from")
+            log_highlights = (
+                numbers_near(log_points, time_center, time_settings.window_seconds)
+                if time_center is not None and time_from == "packet"
+                else set()
+            )
+            log_event = _render_selectable_table(
+                build_log_table(log_records, log_kind, time_settings, log_highlights),
+                HELP,
+                key="log_table",
+            )
+            if log_event is not None and log_event.selection.rows:
+                index = log_event.selection.rows[0]
+                when = record_time(log_records[index], log_kind, time_settings)
+                if when is not None:
+                    st.session_state["time_center"] = when
+                    st.session_state["time_link_from"] = "log"
+            time_center = st.session_state.get("time_center")
+            time_from = st.session_state.get("time_link_from")
+            if time_center is not None and time_from == "log":
+                st.info("패킷 탭에서 강조해 두었습니다")
+            elif time_center is not None and time_from == "packet":
+                st.info("패킷 탭에서 고른 시각 앞뒤 몇 초를 강조해 두었습니다")
     else:
         st.info("아직 파일이 없습니다")
         st.write("로그나 pcap 파일을 올리면 여기에 요약이 나옵니다.")
@@ -318,6 +408,7 @@ with conversation_tab:
                 column_config=_columns(HELP, list(conversation_rows[0])),
                 on_select="rerun",
                 selection_mode="single-row",
+                key="conversation_table",
             )
             selected_rows = event.selection.rows
             if selected_rows:
@@ -331,29 +422,36 @@ with conversation_tab:
 with packet_tab:
     if packet_result:
         _show_parse_notices(packet_result, packets=True)
-        highlighted = set(chosen_conversation.packet_numbers) if chosen_conversation else set()
+        time_center = st.session_state.get("time_center")
+        time_from = st.session_state.get("time_link_from")
+        time_highlights = (
+            numbers_near(packet_points, time_center, time_settings.window_seconds)
+            if time_center is not None and time_from == "log"
+            else set()
+        )
+        conversation_highlights = (
+            set(chosen_conversation.packet_numbers) if chosen_conversation else set()
+        )
+        highlighted = conversation_highlights | time_highlights
         packet_rows = build_packet_table(packet_records, highlighted)
-        if packet_records and highlighted:
-            frame = pd.DataFrame(packet_rows)
-            styled = frame.style.apply(
-                lambda row: [
-                    "background-color: #dbeafe; color: #102a43"
-                    if "강조" in str(row["표시"])
-                    else ""
-                ]
-                * len(row),
-                axis=1,
-            )
-            st.dataframe(
-                styled,
-                width="stretch",
-                hide_index=True,
-                column_config=_columns(HELP, list(packet_rows[0])),
-            )
-            st.info(f"대화 {chosen_conversation.uid}의 패킷을 강조해 두었습니다")
-        elif packet_records or not packet_result.notices:
-            _render_table(packet_rows, HELP)
         if packet_records:
+            packet_event = _render_selectable_table(
+                packet_rows, HELP, key="packet_table"
+            )
+            if packet_event is not None and packet_event.selection.rows:
+                index = packet_event.selection.rows[0]
+                when = record_time(packet_records[index], "pcap", time_settings)
+                if when is not None:
+                    st.session_state["time_center"] = when
+                    st.session_state["time_link_from"] = "packet"
+            if chosen_conversation and conversation_highlights:
+                st.info(f"대화 {chosen_conversation.uid}의 패킷을 강조해 두었습니다")
+            time_center = st.session_state.get("time_center")
+            time_from = st.session_state.get("time_link_from")
+            if time_center is not None and time_from == "log":
+                st.info("로그 탭에서 고른 시각 앞뒤 몇 초를 강조해 두었습니다")
+            elif time_center is not None and time_from == "packet":
+                st.info("로그 탭에서 강조해 두었습니다")
             selected_packet = st.selectbox(
                 "패킷 상세",
                 range(len(packet_records)),
@@ -364,6 +462,8 @@ with packet_tab:
                 st.write({key: value for key, value in record.fields.items() if value is not None})
                 st.text(f"Wireshark에서는: frame.number == {record.line_number}")
                 st.text(f"원본 값: {record.raw}")
+        elif not packet_result.notices:
+            _show_empty_records()
     else:
         st.info("아직 파일이 없습니다")
         st.write("로그나 pcap 파일을 올리면 여기에 요약이 나옵니다.")
