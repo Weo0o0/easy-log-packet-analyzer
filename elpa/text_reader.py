@@ -7,7 +7,7 @@ from pathlib import Path
 import yaml
 
 from elpa.limits import iter_bounded_lines, open_checked
-from elpa.models import ParseResult, Record
+from elpa.models import MAX_UNPARSED_LINES, ParseResult, Record
 
 _DECODERS_PATH = Path(__file__).resolve().parents[1] / "decoders.yaml"
 _MAX_LINE_BYTES = 8192
@@ -52,13 +52,14 @@ def read_text_log(path: str, log_type: str) -> ParseResult:
 
     records: list[Record] = []
     unparsed = 0
-    unparsed_lines: list[int] = []  # bounded by the 10MB file cap
+    unparsed_lines: list[int] = []
     with open_checked(path) as f:
         lines = iter_bounded_lines(f)
         for line_number, line in enumerate(lines, start=1):
             if len(line) > _MAX_LINE_BYTES:
                 unparsed += 1
-                unparsed_lines.append(line_number)
+                if len(unparsed_lines) < MAX_UNPARSED_LINES:
+                    unparsed_lines.append(line_number)
                 continue
             raw = line.decode("utf-8", errors="replace").rstrip("\n\r")
             body = raw
@@ -66,7 +67,8 @@ def read_text_log(path: str, log_type: str) -> ParseResult:
                 m = prefix.match(raw)
                 if not m:
                     unparsed += 1
-                    unparsed_lines.append(line_number)
+                    if len(unparsed_lines) < MAX_UNPARSED_LINES:
+                        unparsed_lines.append(line_number)
                     continue
                 body = raw[m.end() :]
 
@@ -89,6 +91,12 @@ def read_text_log(path: str, log_type: str) -> ParseResult:
                 break
             if not matched:
                 unparsed += 1
-                unparsed_lines.append(line_number)
+                if len(unparsed_lines) < MAX_UNPARSED_LINES:
+                    unparsed_lines.append(line_number)
 
-    return ParseResult(records=records, unparsed=unparsed, unparsed_lines=unparsed_lines)
+    return ParseResult(
+        records=records,
+        unparsed=unparsed,
+        unparsed_lines=unparsed_lines,
+        unparsed_lines_truncated=unparsed > len(unparsed_lines),
+    )

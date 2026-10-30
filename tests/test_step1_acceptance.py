@@ -8,6 +8,7 @@ import pytest
 
 from elpa import read_evtx, read_text_log
 from elpa.limits import MAX_FILE_BYTES
+from elpa.models import MAX_UNPARSED_LINES
 
 
 def test_openssh_2k(openssh_log: Path) -> None:
@@ -51,6 +52,19 @@ def test_unparsed_lines_keep_source_numbers(tmp_path: Path, log_type: str) -> No
     result = read_text_log(str(path), log_type)
     assert result.unparsed_lines == [2, 4]
     assert result.unparsed == len(result.unparsed_lines)
+    assert result.unparsed_lines_truncated is False
+
+
+def test_unparsed_line_numbers_are_bounded(tmp_path: Path) -> None:
+    path = tmp_path / "newlines.log"
+    line_count = 1_100_000
+    with path.open("wb") as f:
+        f.write(b"\n" * line_count)
+
+    result = read_text_log(str(path), "sshd")
+    assert result.unparsed == line_count
+    assert len(result.unparsed_lines) == MAX_UNPARSED_LINES
+    assert result.unparsed_lines_truncated is True
 
 
 def test_unparsed_and_malformed_lines_are_counted(tmp_path: Path) -> None:

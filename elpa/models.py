@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
+MAX_UNPARSED_LINES = 1000
+
 
 @dataclass(frozen=True)
 class Record:
@@ -19,3 +21,4 @@ class ParseResult:
     unparsed: int  # 읽지 못한 줄
     notices: list[str] = field(default_factory=list)  # 안내 메시지
     unparsed_lines: list[int] = field(default_factory=list)
+    unparsed_lines_truncated: bool = False
