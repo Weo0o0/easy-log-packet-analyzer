@@ -2,5 +2,7 @@
 python-evtx==0.8.1
 PyYAML==6.0.2
 dpkt==1.9.8
+# Apache-2.0
+streamlit==1.66.1
 # Tests
 pytest==8.3.5
