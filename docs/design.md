@@ -101,7 +101,7 @@
   - `state`: 코드 값만 넣음(한국어 설명은 필드에 넣지 않고 `hints.yaml`/`help.yaml`에 둠). TCP는 Zeek `conn_state` 일부(`S0`, `SF`, `REJ`, `RSTO`, `RSTR`, `OTH`), UDP는 양방향 모두 보이면 `SF`, 한쪽만 보이면 `S0`.
   - 그 외: 지속 시간, 패킷 수, 바이트 수.
 - 범위: TCP 재조립은 하지 않음(dpkt는 TCP 재조립을 기본으로 하지 않음).
-- 완료 확인 방법: dns.cap → 대화 8개(모두 `protocol="UDP"`, `service="DNS"`), 가장 큰 대화 192.168.170.8:32795 ↔ 192.168.170.20:53 = 24패킷. 이 숫자들은 dpkt로 확인했습니다. tshark가 있으면 `tshark -r dns.cap -q -z conv,udp` 대화 수와 같아야 함.
+- 완료 확인 방법: dns.cap → 대화 8개(모두 `protocol="UDP"`, `service="DNS"`), 가장 큰 대화 192.168.170.8:32795 ↔ 192.168.170.20:53 = 24패킷. 이 숫자들은 dpkt로 확인했습니다. 대화별 실제 `state`/`history` 값은 확인 못 함. tshark가 있으면 `tshark -r dns.cap -q -z conv,udp` 대화 수와 같아야 함.
 - 기능: 7번(대화 요약 탭).
 
 ### 4단계: 웹 화면 기본 (Streamlit)
