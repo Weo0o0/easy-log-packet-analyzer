@@ -97,6 +97,40 @@ def test_not_pcap_returns_no_records_and_notice(tmp_path: Path) -> None:
     assert any("pcap 파일이 아닙니다" in n for n in result.notices)
 
 
+@pytest.mark.parametrize(
+    ("magic", "endian"),
+    [
+        (0xA1B2C3D4, "<"),
+        (0xA1B2C3D4, ">"),
+        (0xA1B23C4D, "<"),
+        (0xA1B23C4D, ">"),
+    ],
+)
+def test_pcap_magic_variants_accepted(
+    tmp_path: Path, magic: int, endian: str
+) -> None:
+    header = struct.pack(f"{endian}IHHIIII", magic, 2, 4, 0, 0, 65535, 1)
+    frame = _udp_frame()
+    pkt = struct.pack(f"{endian}IIII", 1112172466, 496046, len(frame), len(frame)) + frame
+    path = tmp_path / "magic.cap"
+    path.write_bytes(header + pkt)
+
+    result = _read_pcap(path)
+
+    assert result.notices == []
+    assert len(result.records) == 1
+
+
+def test_extensionless_text_file_rejected_by_magic_bytes(tmp_path: Path) -> None:
+    path = tmp_path / "apache_logs"
+    path.write_bytes(b'127.0.0.1 - - [10/Oct/2000:13:55:36 -0700] "GET / HTTP/1.0" 200 2326\n')
+
+    result = _read_pcap(path)
+
+    assert result.records == []
+    assert result.notices == ["pcap 파일이 아닙니다"]
+
+
 def test_unknown_link_type_is_raw_with_notice(tmp_path: Path) -> None:
     path = tmp_path / "unknown-link.pcap"
     path.write_bytes(_pcap([bytes(range(60))], network=999))

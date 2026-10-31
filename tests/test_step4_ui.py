@@ -46,8 +46,7 @@ def test_empty_state():
 )
 def test_log_sample_counts(filename: str, expected: str):
     path = sample(filename)
-    upload_name = "apache_logs.log" if filename == "apache_logs" else filename
-    app = run_upload(upload_name, path.read_bytes(), log=True, timeout=20)
+    app = run_upload(filename, path.read_bytes(), log=True, timeout=20)
     if filename == "OpenSSH_2k.log":
         assert app.dataframe[0].value["종류"].str.contains("실패").sum() == int(expected)
     elif filename == "apache_logs":
@@ -58,10 +57,11 @@ def test_log_sample_counts(filename: str, expected: str):
 
 def test_dns_sample_counts():
     path = sample("dns.cap")
-    app = run_upload("dns.pcap", path.read_bytes(), log=False, timeout=20)
+    app = run_upload("dns.cap", path.read_bytes(), log=False, timeout=20)
 
     assert metric(app, "패킷") == "38"
     assert metric(app, "대화") == "8"
+    assert any(item.value == "원본 값: 확인 못 함" for item in app.text)
 
 
 def test_unparsed_line_numbers_and_truncation():
@@ -101,3 +101,31 @@ def test_elpa_exports_step4_helpers():
 
     assert callable(elpa.read_pcap)
     assert callable(elpa.build_conversations)
+
+
+def test_most_recent_selection_wins_across_tabs(dns_cap: Path):
+    log_line = b'127.0.0.1 - - [30/Mar/2005:17:47:48 +0900] "GET / HTTP/1.0" 200 123\n'
+    app = AppTest.from_file(str(APP)).run()
+    app.file_uploader[0].set_value(("apache_logs", log_line, "application/octet-stream"))
+    app.file_uploader[1].set_value(("dns.cap", dns_cap.read_bytes(), "application/octet-stream"))
+    app.run(timeout=20)
+    app.selectbox[0].select("access").run(timeout=20)
+
+    # 1. Select packet row 0 -> packet wins
+    app.session_state["packet_table"] = {"selection": {"rows": [0], "columns": [], "cells": []}}
+    app.run(timeout=20)
+    assert app.session_state["time_link_from"] == "packet"
+
+    # 2. While packet row 0 remains selected, select log row 0 -> log wins
+    app.session_state["log_table"] = {"selection": {"rows": [0], "columns": [], "cells": []}}
+    app.run(timeout=20)
+    assert app.session_state["time_link_from"] == "log"
+    assert any(item.value == "패킷 탭에서 강조해 두었습니다" for item in app.info)
+    assert any(item.value == "로그 탭에서 고른 시각 앞뒤 몇 초를 강조해 두었습니다" for item in app.info)
+
+    # 3. While log row 0 remains selected, select packet row 1 -> packet wins and log tab updates
+    app.session_state["packet_table"] = {"selection": {"rows": [1], "columns": [], "cells": []}}
+    app.run(timeout=20)
+    assert app.session_state["time_link_from"] == "packet"
+    assert any(item.value == "패킷 탭에서 고른 시각 앞뒤 몇 초를 강조해 두었습니다" for item in app.info)
+    assert any(item.value == "로그 탭에서 강조해 두었습니다" for item in app.info)

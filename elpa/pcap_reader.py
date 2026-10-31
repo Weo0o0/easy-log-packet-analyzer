@@ -10,6 +10,12 @@ import dpkt
 from elpa.limits import MAX_FILE_BYTES, open_checked
 from elpa.models import ParseResult, Record
 
+_PCAP_MAGICS = frozenset({
+    b"\xa1\xb2\xc3\xd4",
+    b"\xd4\xc3\xb2\xa1",
+    b"\xa1\xb2\x3c\x4d",
+    b"\x4d\x3c\xb2\xa1",
+})
 _PCAPNG_MAGIC = b"\x0a\x0d\x0d\x0a"
 _TCP_FLAG_BITS = (
     (dpkt.tcp.TH_FIN, "F"),
@@ -163,6 +169,8 @@ def read_pcap(path: str) -> ParseResult:
             if bounded.short_read and not any("잘려" in notice for notice in notices):
                 notices.append(f"파일 끝이 잘려 {len(records)}개까지만 읽음")
             return ParseResult(records=records, unparsed=0, notices=notices)
+        if magic not in _PCAP_MAGICS:
+            return ParseResult(records=[], unparsed=0, notices=["pcap 파일이 아닙니다"])
         f.seek(0)
         try:
             reader = dpkt.pcap.Reader(f)
