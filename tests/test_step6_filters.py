@@ -104,7 +104,7 @@ def test_wireshark_and_tshark_exact_strings() -> None:
             ],
             table,
         )
-        == "ip.src == 192.168.170.8 && udp.port == 53 || tcp.port == 53"
+        == "ip.src == 192.168.170.8 && (udp.port == 53 || tcp.port == 53)"
     )
 
 

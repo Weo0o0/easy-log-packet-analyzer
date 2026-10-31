@@ -68,3 +68,15 @@ def test_both_tabs_empty_at_once_does_not_duplicate_button_id():
 
     assert not app.exception
     assert sum(item.label == "필터 지우기" for item in app.button) == 2
+
+
+def test_sshd_srcip_filter_has_no_awk_translation():
+    sample = ROOT / ".samples/OpenSSH_2k.log"
+    if not sample.is_file():
+        pytest.skip("sample unavailable")
+    app = AppTest.from_file(str(ROOT / "app.py")).run()
+    app.file_uploader[0].set_value(("auth.log", sample.read_bytes(), "text/plain"))
+    app.session_state["step6_로그"] = [FilterCond("srcip", "==", "1.2.3.4")]
+    app.run(timeout=20)
+
+    assert not any(item.value.startswith("awk ") for item in app.code)

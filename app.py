@@ -324,13 +324,15 @@ def _filtered_records(records: list[Record], kind: str) -> list[Record]:
     return filtered
 
 
-def _render_filter_commands(conds: list[FilterCond], filename: str) -> None:
+def _render_filter_commands(
+    conds: list[FilterCond], filename: str, awk_ok: bool = False
+) -> None:
     st.subheader("명령 번역")
     table = load_filters()
     for label, command in (
         ("Wireshark", to_wireshark(conds, table)),
         ("tshark", to_tshark(conds, table, filename)),
-        ("awk", to_awk(conds, table, filename)),
+        ("awk", to_awk(conds, table, filename) if awk_ok else None),
     ):
         st.caption(label)
         st.code(command or "번역 없음")
@@ -460,7 +462,7 @@ with log_tab:
                 else None
             )
             _render_filter_commands(
-                st.session_state["step6_로그"], log_upload.name
+                st.session_state["step6_로그"], log_upload.name, log_kind == "access"
             )
             if log_event is not None and log_event.selection.rows:
                 index = log_event.selection.rows[0]

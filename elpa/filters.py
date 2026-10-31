@@ -94,7 +94,8 @@ def to_wireshark(conds: list[FilterCond], table: dict) -> str | None:
             template = template.replace("ip.src", "ipv6.src").replace(
                 "ip.dst", "ipv6.dst"
             )
-        parts.append(template.replace("{v}", val))
+        part = template.replace("{v}", val)
+        parts.append(f"({part})" if len(conds) > 1 and "||" in part else part)
     return " && ".join(parts)
 
 
