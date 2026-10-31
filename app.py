@@ -366,17 +366,25 @@ def _render_alerts(
         for index, alert in enumerate(alerts):
             rule = rule_by_id[alert.rule_id]
             with st.container(border=True):
-                st.text(f"{alert.level} · {alert.category} · {alert.msg}")
-                st.text(f"왜 이상한가: {rule.why}")
-                st.text(f"다음 단계: {rule.next_steps}")
                 st.text(
-                    f"wireshark_filter: {rule.wireshark_filter.replace('{track}', alert.track_value)}"
+                    f"[!] [분류: {alert.category}] [level: {alert.level}] "
+                    f"[신뢰도: {alert.confidence}]"
+                )
+                st.text(f"제목: {alert.msg}")
+                st.text(f"왜 이상한가: {rule.why}")
+                st.text("근거: " + ", ".join(map(str, alert.evidence)) + "  [원본 보기]")
+                if alert.confidence == "더 확인 필요":
+                    st.text(f"더 확인 필요: {alert.confidence_reason}")
+                else:
+                    st.text(f"신뢰도 판단: {alert.confidence_reason}")
+                st.text(f"다음 확인 단계: {rule.next_steps}")
+                st.text(
+                    "Wireshark에서는: "
+                    f"{rule.wireshark_filter.replace('{track}', alert.track_value)}"
                 )
                 st.text(f"오해 주의: {rule.caution}")
-                st.text(f"신뢰도: {alert.confidence} · {alert.confidence_reason}")
-                st.text("근거 번호: " + ", ".join(map(str, alert.evidence)))
                 choice = st.selectbox(
-                    "근거 줄/패킷 강조",
+                    "[원본 보기] 근거 줄/패킷 강조",
                     [None, *alert.evidence],
                     format_func=lambda value: "선택 안 함" if value is None else str(value),
                     key=f"{scope}_alert_evidence_{index}",
@@ -384,6 +392,7 @@ def _render_alerts(
                 if choice is not None:
                     selected.add(choice)
                 if rule.suricata_example:
+                    st.caption("Suricata 룰 예시 (참고용, 실행 안 함)")
                     st.code(rule.suricata_example)
     matched_hints = compute_hints(
         hint_items if hint_items is not None else records, hints, hint_target or target

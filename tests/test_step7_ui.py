@@ -16,13 +16,21 @@ def upload_sample(name: str, index: int) -> AppTest:
     return app.run(timeout=30)
 
 
-def test_openssh_alert_card_shows_level_caution_and_confidence():
+def test_openssh_alert_card_matches_step7_layout():
     app = upload_sample("OpenSSH_2k.log", 0)
     app.number_input[0].set_value(2023).run(timeout=30)
 
-    assert any("중간" in item.value for item in app.text)
+    text = [item.value for item in app.text]
+    assert any("[!] [분류:" in value and "[level: 중간]" in value for value in text)
+    assert any(value.startswith("제목:") for value in text)
+    assert any(value.startswith("근거:") and "[원본 보기]" in value for value in text)
+    assert any(value.startswith("Wireshark에서는:") for value in text)
+    assert any(value.startswith("더 확인 필요:") for value in text) or any(
+        value.startswith("신뢰도 판단:") for value in text
+    )
     assert any("오해 주의:" in item.value for item in app.text)
-    assert any("신뢰도: 근거 충분" in item.value or "신뢰도: 더 확인 필요" in item.value for item in app.text)
+    assert any("[신뢰도: 근거 충분]" in value or "[신뢰도: 더 확인 필요]" in value for value in text)
+    assert any(item.value == "Suricata 룰 예시 (참고용, 실행 안 함)" for item in app.caption)
 
 
 def test_alert_empty_state_copy():
