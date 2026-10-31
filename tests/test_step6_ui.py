@@ -52,3 +52,19 @@ def test_clear_filters_button_restores_rows():
 
     assert app.session_state["step6_패킷"] == []
     assert len(app.dataframe(key="packet_table").value) == 38
+
+
+def test_both_tabs_empty_at_once_does_not_duplicate_button_id():
+    log_sample = ROOT / ".samples/OpenSSH_2k.log"
+    packet_sample = ROOT / ".samples/dns.cap"
+    if not log_sample.is_file() or not packet_sample.is_file():
+        pytest.skip("samples unavailable")
+    app = AppTest.from_file(str(ROOT / "app.py")).run()
+    app.file_uploader[0].set_value(("auth.log", log_sample.read_bytes(), "text/plain"))
+    app.file_uploader[1].set_value(("dns.pcap", packet_sample.read_bytes(), "application/octet-stream"))
+    app.session_state["step6_로그"] = [FilterCond("srcip", "==", "not-present")]
+    app.session_state["step6_패킷"] = [FilterCond("port", "==", "not-present")]
+    app.run(timeout=20)
+
+    assert not app.exception
+    assert sum(item.label == "필터 지우기" for item in app.button) == 2

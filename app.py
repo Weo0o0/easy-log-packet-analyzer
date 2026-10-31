@@ -205,13 +205,13 @@ def _show_unparsed(result: ParseResult) -> None:
         st.text("원본 줄 번호는 처음 1,000개까지만 표시했습니다.")
 
 
-def _show_empty_records() -> None:
+def _show_empty_records(key: str) -> None:
     st.error("조건에 맞는 줄이 없습니다")
     st.write(
         "지금 필터에 맞는 로그/패킷이 0건입니다.\n\n"
         "필터를 지우거나, 시간 범위를 넓히거나, 다른 열을 골라 보세요."
     )
-    if st.button("필터 지우기"):
+    if st.button("필터 지우기", key=key):
         st.session_state["step6_로그"] = []
         st.session_state["step6_패킷"] = []
         st.rerun()
@@ -255,7 +255,7 @@ def _style_highlights(frame: pd.DataFrame):
 
 def _render_selectable_table(rows: list[dict], help_data: dict, *, key: str):
     if not rows:
-        _show_empty_records()
+        _show_empty_records(f"{key}_empty")
         return None
     frame = pd.DataFrame(rows)
     has_highlight = "표시" in frame.columns and frame["표시"].astype(str).str.contains(
@@ -320,7 +320,7 @@ def _filtered_records(records: list[Record], kind: str) -> list[Record]:
             st.rerun()
     filtered = apply_filters(records, conds)
     if not filtered and conds:
-        _show_empty_records()
+        _show_empty_records(f"{key}_empty")
     return filtered
 
 
@@ -496,7 +496,7 @@ with conversation_tab:
             if selected_rows:
                 chosen_conversation = conversations[selected_rows[0]]
         else:
-            _show_empty_records()
+            _show_empty_records("conversation_empty")
     else:
         st.info("아직 파일이 없습니다")
         st.write("로그나 pcap 파일을 올리면 여기에 요약이 나옵니다.")
@@ -549,7 +549,7 @@ with packet_tab:
             st.session_state["step6_패킷"], packet_upload.name
         )
         if not packet_records and not packet_result.notices:
-            _show_empty_records()
+            _show_empty_records("packet_empty")
     else:
         st.info("아직 파일이 없습니다")
         st.write("로그나 pcap 파일을 올리면 여기에 요약이 나옵니다.")
