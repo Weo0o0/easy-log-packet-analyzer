@@ -1,0 +1,97 @@
+- id: dns_query_answer
+  layer: app
+  match:
+    source: packet
+    kind: DNS
+  title: 이름을 IP 주소로 바꾸는 질문과 대답
+  why: 웹 주소를 열 때 컴퓨터가 먼저 DNS 서버에 주소를 묻습니다.
+  check_next:
+    - 같은 대화(udp.stream)에 대답이 있는지
+    - 대화 요약의 상태 값
+  caution: DNS가 많이 보이는 것 자체는 보통 정상입니다.
+
+- id: udp_one_side_only
+  layer: transport
+  match:
+    source: conversation
+    protocol: UDP
+    state: S0
+  title: 한쪽 방향만 보이는 UDP 대화
+  why: 대답이 없었거나, 캡처한 위치에서 대답이 지나가지 않았을 수 있습니다.
+  check_next:
+    - 반대 방향 패킷이 있는지
+    - 캡처한 위치
+  caution: 응답이 안 보였다고 바로 문제라고 단정하지 않습니다.
+
+- id: udp_dns_conversation
+  layer: transport
+  match:
+    source: conversation
+    protocol: UDP
+    service: DNS
+  title: UDP로 주고받은 DNS 대화 묶음
+  why: 컴퓨터와 DNS 서버가 같은 포트 쌍으로 주고받은 질문·대답 패킷을 한 줄로 묶은 것입니다.
+  check_next:
+    - 패킷 수와 바이트 합계가 평소와 비슷한지
+    - 해당 대화의 패킷 목록
+  caution: 웹 페이지 하나를 열 때도 여러 도메인 주소를 물어보므로 대화가 여러 개 생길 수 있습니다.
+
+- id: ssh_login_failed
+  layer: log_auth
+  match:
+    source: log
+    kind: sshd 실패
+  title: SSH 로그인 실패 기록
+  why: 비밀번호를 틀렸거나 없는 계정 이름으로 접속을 시도하면 남습니다.
+  check_next:
+    - 같은 srcip의 성공 기록이 있는지
+    - 7단계 경고 카드
+  caution: 한두 번 실패는 오타일 때가 많습니다.
+
+- id: ssh_login_accepted
+  layer: log_auth
+  match:
+    source: log
+    kind: sshd 성공
+  title: SSH 로그인 성공 기록
+  why: 올바른 비밀번호나 인증 수단으로 원격 접속에 성공했을 때 남습니다.
+  check_next:
+    - 접속한 사용자 계정과 출발지 IP(srcip)가 평소 쓰던 것인지
+    - 바로 직전에 같은 IP의 실패 기록이 많았는지
+  caution: 정상 관리 작업이나 자동 배포 스크립트도 같은 기록을 남깁니다.
+
+- id: ssh_invalid_user
+  layer: log_auth
+  match:
+    source: log
+    kind: sshd 없는 사용자
+  title: 서버에 없는 계정으로 SSH 접속 시도
+  why: 서버에 등록되지 않은 사용자 이름으로 접속을 시도할 때 남습니다.
+  check_next:
+    - 같은 출발지 IP에서 여러 계정 이름을 돌아가며 시도하는지
+    - 이어서 로그인 성공 기록이 있는지
+  caution: 계정 이름을 잘못 입력한 정상 사용자의 실수일 수도 있습니다.
+
+- id: web_access_request
+  layer: log_web
+  match:
+    source: log
+    kind: access.log
+  title: 웹 서버 접속 요청과 응답 기록
+  why: 브라우저나 프로그램이 웹 서버에 페이지·파일을 요청할 때마다 한 줄씩 남습니다.
+  check_next:
+    - 요청 경로(path)와 상태 코드(status)
+    - 짧은 시간에 같은 출발지 IP의 404 응답이 몰려 있는지
+  caution: 웹 페이지 하나를 불러올 때도 이미지·스크립트 때문에 수십 줄이 한꺼번에 기록됩니다.
+
+- id: windows_event_auth
+  layer: log_auth
+  match:
+    source: log
+    kind: evtx
+  title: Windows 보안 이벤트 기록
+  why: Windows에서 로그온 시도나 권한 사용 같은 보안 관련 사건이 일어날 때 이벤트 번호(EventID)와 함께 남습니다.
+  check_next:
+    - EventID 번호와 대상 계정(TargetUserName)
+    - 출발지 주소(IpAddress)가 내부망인지 외부인지
+  caution: 백그라운드 서비스와 시스템 작업도 로그온 이벤트를 자주 남깁니다.

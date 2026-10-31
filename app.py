@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import replace
 from html import escape
 import re
 import tempfile
@@ -28,6 +29,12 @@ from elpa.timeline import (
     build_timeline,
     numbers_near,
     record_time,
+)
+from elpa.layer_help import (
+    build_layer_help,
+    load_layers,
+    load_scenarios,
+    render_layer_help,
 )
 
 HELP_PATH = Path(__file__).resolve().with_name("help.yaml")
@@ -162,6 +169,21 @@ def build_conversation_table(conversations) -> list[dict[str, str | int | float]
 
 
 HELP = load_help()
+
+
+@st.cache_data(show_spinner=False)
+def _load_layer_help_data():
+    layers, layer_notices = load_layers()
+    scenarios, scenario_notices = load_scenarios()
+    return layers, scenarios, (*layer_notices, *scenario_notices)
+
+
+def _show_layer_help(item, source: str) -> None:
+    layers, scenarios, notices = _load_layer_help_data()
+    layer_help = build_layer_help(item, source, layers, scenarios)
+    layer_help = replace(layer_help, notes=(*layer_help.notes, *notices))
+    with st.container(border=True):
+        st.markdown(render_layer_help(layer_help), unsafe_allow_html=True)
 
 
 def _show_parse_notices(result: ParseResult, *, packets: bool = False) -> None:
@@ -539,6 +561,8 @@ with log_tab:
                 st.session_state["step6_로그"], log_upload.name, log_kind == "access"
             )
             log_rows = log_event.selection.rows if log_event is not None else []
+            if len(log_rows) == 1:
+                _show_layer_help(visible_log_records[log_rows[0]], "log")
             prev_log_rows = st.session_state.get("prev_log_rows", [])
             st.session_state["prev_log_rows"] = list(log_rows)
             if log_rows != prev_log_rows:
@@ -588,8 +612,9 @@ with conversation_tab:
                 key="conversation_table",
             )
             selected_rows = event.selection.rows
-            if selected_rows:
+            if len(selected_rows) == 1:
                 chosen_conversation = conversations[selected_rows[0]]
+                _show_layer_help(chosen_conversation, "conversation")
         else:
             _show_empty_records("conversation_empty")
     else:
@@ -625,6 +650,8 @@ with packet_tab:
                 packet_rows, HELP, key="packet_table"
             )
             packet_rows_sel = packet_event.selection.rows if packet_event is not None else []
+            if len(packet_rows_sel) == 1:
+                _show_layer_help(visible_packet_records[packet_rows_sel[0]], "packet")
             prev_packet_rows = st.session_state.get("prev_packet_rows", [])
             st.session_state["prev_packet_rows"] = list(packet_rows_sel)
             if packet_rows_sel != prev_packet_rows:
