@@ -302,7 +302,7 @@ time_settings = TimeSettings(
     window_seconds=window_seconds,
 )
 
-log_upload = st.file_uploader("로그 파일 올리기", type=["log", "txt", "evtx"])
+log_upload = st.file_uploader("로그 파일 올리기")
 log_type = "sshd"
 if log_upload and Path(log_upload.name).suffix.lower() != ".evtx":
     log_type = st.selectbox(
@@ -310,7 +310,7 @@ if log_upload and Path(log_upload.name).suffix.lower() != ".evtx":
         ["sshd", "access"],
         format_func=lambda value: "auth.log (sshd)" if value == "sshd" else "access.log",
     )
-packet_upload = st.file_uploader("패킷 파일 올리기", type=["pcap", "pcapng"])
+packet_upload = st.file_uploader("패킷 파일 올리기")
 
 if not log_upload and not packet_upload:
     st.info("아직 파일이 없습니다")
@@ -379,12 +379,13 @@ with log_tab:
                 HELP,
                 key="log_table",
             )
-            if log_event is not None and log_event.selection.rows:
-                index = log_event.selection.rows[0]
-                when = record_time(log_records[index], log_kind, time_settings)
+            log_rows = log_event.selection.rows if log_event is not None else []
+            if log_rows != st.session_state.get("prev_log_rows", []) and log_rows:
+                when = record_time(log_records[log_rows[0]], log_kind, time_settings)
                 if when is not None:
                     st.session_state["time_center"] = when
                     st.session_state["time_link_from"] = "log"
+            st.session_state["prev_log_rows"] = list(log_rows)
             time_center = st.session_state.get("time_center")
             time_from = st.session_state.get("time_link_from")
             if time_center is not None and time_from == "log":
@@ -437,12 +438,13 @@ with packet_tab:
             packet_event = _render_selectable_table(
                 packet_rows, HELP, key="packet_table"
             )
-            if packet_event is not None and packet_event.selection.rows:
-                index = packet_event.selection.rows[0]
-                when = record_time(packet_records[index], "pcap", time_settings)
+            packet_rows_sel = packet_event.selection.rows if packet_event is not None else []
+            if packet_rows_sel != st.session_state.get("prev_packet_rows", []) and packet_rows_sel:
+                when = record_time(packet_records[packet_rows_sel[0]], "pcap", time_settings)
                 if when is not None:
                     st.session_state["time_center"] = when
                     st.session_state["time_link_from"] = "packet"
+            st.session_state["prev_packet_rows"] = list(packet_rows_sel)
             if chosen_conversation and conversation_highlights:
                 st.info(f"대화 {chosen_conversation.uid}의 패킷을 강조해 두었습니다")
             time_center = st.session_state.get("time_center")
@@ -460,7 +462,7 @@ with packet_tab:
             with st.expander(f"#{record.line_number} {record.fields.get('summary') or record.kind}"):
                 st.write({key: value for key, value in record.fields.items() if value is not None})
                 st.text(f"Wireshark에서는: frame.number == {record.line_number}")
-                st.text(f"원본 값: {record.raw}")
+                st.text("원본 값: 확인 못 함")
         elif not packet_result.notices:
             _show_empty_records()
     else:
