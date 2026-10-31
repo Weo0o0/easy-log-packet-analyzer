@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
 from pathlib import Path
 
 from elpa.conversations import Conversation, build_conversations
@@ -66,10 +67,12 @@ def test_dns_cap_packet_1_is_app_and_all_4_layers_present(dns_cap: Path) -> None
     assert set(lh.present) == {"app", "transport", "ip", "link"}
     assert any(s.id == "dns_query_answer" for s in lh.scenarios)
 
-    rendered = render_layer_help(lh)
+    lh_replaced = replace(lh, notes=lh.notes)
+    rendered = render_layer_help(lh_replaced)
     assert "▶" in rendered
     assert "지금 고른 것" in rendered
-    assert "border: 2px solid" in rendered
+    assert "border: 2px solid currentColor" in rendered
+    assert 'data-raw="' not in rendered
     # All 4 layers in the summary are marked "들어 있음"
     assert rendered.count("들어 있음") == 4
     for layer_name, token in (
@@ -97,11 +100,15 @@ def test_dns_cap_conversations_are_transport_and_no_udp_one_side_only(
         assert conv.history == "Dd"
         assert layer_of(conv, "conversation", layers) == "transport"
 
-        lh = build_layer_help(conv, "conversation", layers, scenarios)
+        lh = replace(build_layer_help(conv, "conversation", layers, scenarios), notes=())
         assert lh.current == "transport"
         assert "udp_one_side_only" not in {s.id for s in lh.scenarios}
         assert "transport" in lh.present
         assert "app" in lh.present
+        rendered = render_layer_help(lh)
+        assert "[응용 계층] DNS" in rendered
+        assert "[전송 계층] UDP" in rendered
+        assert rendered.count("들어 있음") == 2
 
 
 def test_openssh_failed_password_line_maps_to_log_auth_and_ssh_login_failed(
@@ -119,6 +126,11 @@ def test_openssh_failed_password_line_maps_to_log_auth_and_ssh_login_failed(
     assert lh.current == "log_auth"
     assert [l.id for l in lh.layers] == ["log_auth"]
     assert "ssh_login_failed" in [s.id for s in lh.scenarios]
+
+    other = next(r for r in records if r.kind == "sshd")
+    lh_other = replace(build_layer_help(other, "log", layers, scenarios), notes=build_layer_help(other, "log", layers, scenarios).notes)
+    rendered_other = render_layer_help(lh_other)
+    assert rendered_other.count("이 기록에 맞는 예시 상황: 설명 없음") == 1
 
 
 def test_apache_and_evtx_records_map_to_log_layers(
@@ -158,35 +170,32 @@ def test_kind_raw_gives_no_description_without_error() -> None:
     assert "설명 없음" in lh.notes
 
     rendered = render_layer_help(lh)
-    assert "설명 없음" in rendered
-    assert "이 기록에 맞는 예시 상황: 설명 없음" in rendered
+    assert rendered.count("설명 없음") == 2  # once for layer, once for scenario
+    assert rendered.count("이 기록에 맞는 예시 상황: 설명 없음") == 1
 
 
 def test_script_value_is_html_escaped_in_rendered_string() -> None:
     layers, _ = load_layers(LAYERS_YAML)
     scenarios, _ = load_scenarios(SCENARIOS_YAML)
 
-    # 1. <script> in Record fields/summary/raw and kind
+    # 1. <script> in Record kind / layer_labels (visible escaped text)
     pkt_xss = Record(
         line_number=1,
-        kind="DNS",
+        kind="<script>alert(1)</script>",
         fields={"summary": "Ethernet / IP / UDP / <script>alert(1)</script>"},
         raw="<script>alert(1)</script>",
     )
-    lh_pkt = build_layer_help(pkt_xss, "packet", layers, scenarios)
-    rendered_pkt = render_layer_help(lh_pkt)
+    xss_layers = LayerHelp(
+        layers=tuple(l for l in layers if l.id == "app"),
+        current="app",
+        scenarios=(),
+        present=("app",),
+        layer_labels={"app": pkt_xss.kind},
+    )
+    rendered_pkt = render_layer_help(xss_layers)
     assert "&lt;script&gt;alert(1)&lt;/script&gt;" in rendered_pkt
     assert "<script>" not in rendered_pkt
-
-    raw_xss = Record(
-        line_number=2,
-        kind="<script>",
-        fields={"summary": "<script>"},
-        raw="<script>",
-    )
-    rendered_raw = render_layer_help(build_layer_help(raw_xss, "packet", layers, scenarios))
-    assert "&lt;script&gt;" in rendered_raw
-    assert "<script>" not in rendered_raw
+    assert 'data-raw="' not in rendered_pkt
 
     # 2. <script> in YAML text (LayerInfo and Scenario)
     xss_layer = LayerInfo(

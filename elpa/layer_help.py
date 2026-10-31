@@ -3,8 +3,8 @@
 from __future__ import annotations
 
 import html
-from collections.abc import Collection, Sequence
-from dataclasses import dataclass
+from collections.abc import Collection, Mapping, Sequence
+from dataclasses import dataclass, field
 from pathlib import Path
 
 import yaml
@@ -50,14 +50,8 @@ class LayerHelp:
     current: str | None
     scenarios: tuple[Scenario, ...]
     notes: tuple[str, ...] = ()
-
-    @property
-    def present(self) -> tuple[str, ...]:
-        return getattr(self, "_present", (self.current,) if self.current else ())
-
-    @property
-    def layer_labels(self) -> dict[str, str]:
-        return dict(getattr(self, "_layer_labels", {}))
+    present: tuple[str, ...] = ()
+    layer_labels: Mapping[str, str] = field(default_factory=dict)
 
 
 class _LayerTuple(tuple[LayerInfo, ...]):
@@ -433,22 +427,17 @@ def _extract_present_and_labels(
     norm_source: str,
     current: str | None,
     app_names: Collection[str],
-) -> tuple[tuple[str, ...], dict[str, str], tuple[str, ...]]:
+) -> tuple[tuple[str, ...], dict[str, str]]:
     present: list[str] = []
     labels: dict[str, str] = {}
-    raw_tokens: list[str] = []
 
     if norm_source == "packet" and isinstance(item, Record):
-        if item.kind:
-            raw_tokens.append(item.kind)
         summary = item.fields.get("summary") or ""
         if summary:
             for part in summary.split(" / "):
                 token = part.strip()
                 if not token:
                     continue
-                if token not in raw_tokens:
-                    raw_tokens.append(token)
                 lid = _packet_token_layer(token, app_names)
                 if lid is not None:
                     labels[lid] = token
@@ -458,19 +447,10 @@ def _extract_present_and_labels(
             labels.setdefault(current, item.kind)
             if current not in present:
                 present.append(current)
-        for v in item.fields.values():
-            if v and v not in raw_tokens:
-                raw_tokens.append(str(v))
-        if item.raw and item.raw not in raw_tokens:
-            raw_tokens.append(item.raw)
     elif norm_source == "conversation":
         if isinstance(item, Conversation):
             proto = item.protocol
             service = item.service
-            if proto:
-                raw_tokens.append(proto)
-            if service and service not in raw_tokens:
-                raw_tokens.append(service)
             if current == "transport":
                 labels["transport"] = proto
                 present.append("transport")
@@ -480,8 +460,6 @@ def _extract_present_and_labels(
         elif isinstance(item, Record):
             proto = item.fields.get("protocol") or item.kind
             service = item.fields.get("service") or item.kind
-            if proto:
-                raw_tokens.append(proto)
             if current == "transport":
                 labels["transport"] = proto
                 present.append("transport")
@@ -489,21 +467,14 @@ def _extract_present_and_labels(
                 labels["app"] = service
                 present.append("app")
     elif norm_source == "log" and isinstance(item, Record):
-        if item.kind:
-            raw_tokens.append(item.kind)
         if current is not None:
             labels[current] = item.kind
             present.append(current)
-        for v in item.fields.values():
-            if v and v not in raw_tokens:
-                raw_tokens.append(str(v))
-        if item.raw and item.raw not in raw_tokens:
-            raw_tokens.append(item.raw)
 
     ordered_present = tuple(
         lid for lid in (*_PACKET_LAYER_IDS, "log_auth", "log_web") if lid in present
     )
-    return ordered_present, labels, tuple(raw_tokens)
+    return ordered_present, labels
 
 
 def build_layer_help(
@@ -558,20 +529,18 @@ def build_layer_help(
     if not matched_scenarios:
         notes.append("이 기록에 맞는 예시 상황: 설명 없음")
 
-    present, labels, raw_tokens = _extract_present_and_labels(
+    present, labels = _extract_present_and_labels(
         item, norm_source, current, app_names
     )
 
-    result = LayerHelp(
+    return LayerHelp(
         layers=display_layers,
         current=current,
         scenarios=matched_scenarios,
         notes=tuple(notes),
+        present=present,
+        layer_labels=labels,
     )
-    object.__setattr__(result, "_present", present)
-    object.__setattr__(result, "_layer_labels", labels)
-    object.__setattr__(result, "_raw_tokens", raw_tokens)
-    return result
 
 
 def _esc(value: object) -> str:
@@ -591,20 +560,18 @@ def render_layer_help(
         if item is not None:
             norm_source = _normalize_source(item, source)
             app_names = _resolve_app_names(layer_help.layers)
-            present, labels, raw_tokens = _extract_present_and_labels(
+            present, labels = _extract_present_and_labels(
                 item, norm_source, layer_help.current, app_names
             )
         else:
             present = layer_help.present
             labels = layer_help.layer_labels
-            raw_tokens = getattr(layer_help, "_raw_tokens", ())
     else:
         layer_help = build_layer_help(
             help_or_item, source=source, layers=layers, scenarios=scenarios
         )
         present = layer_help.present
         labels = layer_help.layer_labels
-        raw_tokens = getattr(layer_help, "_raw_tokens", ())
 
     parts: list[str] = [
         '<div class="elpa-layer-help" style="border: 1px solid #cbd5e1; border-radius: 6px; padding: 12px;">',
@@ -615,10 +582,8 @@ def render_layer_help(
     current_info: LayerInfo | None = None
 
     if not ordered_layers or layer_help.current is None:
-        raw_suffix = (
-            f" ({', '.join(_esc(t) for t in raw_tokens)})" if raw_tokens else ""
-        )
-        parts.append(f"<div>설명 없음{raw_suffix}</div>")
+        if "설명 없음" not in layer_help.notes:
+            parts.append("<div>설명 없음</div>")
     else:
         for layer in ordered_layers:
             if layer.id == layer_help.current:
@@ -630,7 +595,7 @@ def render_layer_help(
 
             if is_current:
                 style = (
-                    "border: 2px solid #0f172a; font-weight: 700; "
+                    "border: 2px solid currentColor; font-weight: 700; "
                     "padding: 6px 10px; margin: 4px 0; border-radius: 4px;"
                 )
                 marker = "▶ "
@@ -666,12 +631,6 @@ def render_layer_help(
         else:
             parts.append('<div style="margin-top: 8px;">설명 없음</div>')
 
-        if raw_tokens:
-            escaped_tokens = ", ".join(_esc(t) for t in raw_tokens)
-            parts.append(
-                f'<div style="display:none;" data-raw="{escaped_tokens}"></div>'
-            )
-
     parts.append('<hr style="margin: 10px 0; border: 0; border-top: 1px solid #cbd5e1;" />')
     parts.append('<div style="font-weight: 700; margin-bottom: 6px;">이런 상황에서 보입니다</div>')
 
@@ -686,7 +645,7 @@ def render_layer_help(
                 f"<div>오해 주의: {_esc(sc.caution)}</div>"
                 "</div>"
             )
-    else:
+    elif "이 기록에 맞는 예시 상황: 설명 없음" not in layer_help.notes:
         parts.append("<div>이 기록에 맞는 예시 상황: 설명 없음</div>")
 
     if layer_help.notes:
