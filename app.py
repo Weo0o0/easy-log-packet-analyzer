@@ -11,6 +11,14 @@ import streamlit as st
 import yaml
 
 from elpa import build_conversations, read_evtx, read_pcap, read_text_log
+from elpa.filters import (
+    FilterCond,
+    apply_filters,
+    load_filters,
+    to_awk,
+    to_tshark,
+    to_wireshark,
+)
 from elpa.models import ParseResult, Record
 from elpa.timeline import (
     TimeSettings,
@@ -197,13 +205,16 @@ def _show_unparsed(result: ParseResult) -> None:
         st.text("원본 줄 번호는 처음 1,000개까지만 표시했습니다.")
 
 
-def _show_empty_records() -> None:
+def _show_empty_records(key: str) -> None:
     st.error("조건에 맞는 줄이 없습니다")
     st.write(
         "지금 필터에 맞는 로그/패킷이 0건입니다.\n\n"
         "필터를 지우거나, 시간 범위를 넓히거나, 다른 열을 골라 보세요."
     )
-    st.caption("필터 지우기")
+    if st.button("필터 지우기", key=key):
+        st.session_state["step6_로그"] = []
+        st.session_state["step6_패킷"] = []
+        st.rerun()
 
 
 def _show_file_error(error: ValueError) -> None:
@@ -244,7 +255,7 @@ def _style_highlights(frame: pd.DataFrame):
 
 def _render_selectable_table(rows: list[dict], help_data: dict, *, key: str):
     if not rows:
-        _show_empty_records()
+        _show_empty_records(f"{key}_empty")
         return None
     frame = pd.DataFrame(rows)
     has_highlight = "표시" in frame.columns and frame["표시"].astype(str).str.contains(
@@ -259,6 +270,72 @@ def _render_selectable_table(rows: list[dict], help_data: dict, *, key: str):
         selection_mode="single-row",
         key=key,
     )
+
+
+def _filtered_records(records: list[Record], kind: str) -> list[Record]:
+    fields = {
+        "로그": ["srcip", "status", "time"],
+        "패킷": ["src", "dst", "port", "protocol", "time"],
+    }[kind]
+    key = f"step6_{kind}"
+    conds = st.session_state.setdefault(key, [])
+    options = {
+        field: sorted(
+            {
+                str(record.fields[field])
+                for record in records
+                if record.fields.get(field) is not None
+            }
+            | (
+                {
+                    str(value)
+                    for record in records
+                    for value in (record.fields.get("sport"), record.fields.get("dport"))
+                    if value is not None
+                }
+                if field == "port"
+                else set()
+            )
+        )
+        for field in fields
+    }
+    st.subheader("필터")
+    if fields and any(options.values()):
+        field = st.selectbox(
+            "필터 열", [name for name in fields if options[name]], key=f"{key}_field"
+        )
+        value = st.selectbox("필터 값", options[field], key=f"{key}_value")
+        if st.button("필터 추가", key=f"{key}_add"):
+            condition = FilterCond(field, "==", value)
+            if condition not in conds:
+                conds.append(condition)
+                st.session_state[key] = conds
+                st.rerun()
+    for index, cond in enumerate(conds):
+        left, right = st.columns([5, 1])
+        left.text(f"{cond.field} == {cond.value}")
+        if right.button("지우기", key=f"{key}_remove_{index}"):
+            conds.pop(index)
+            st.session_state[key] = conds
+            st.rerun()
+    filtered = apply_filters(records, conds)
+    if not filtered and conds:
+        _show_empty_records(f"{key}_empty")
+    return filtered
+
+
+def _render_filter_commands(
+    conds: list[FilterCond], filename: str, awk_ok: bool = False
+) -> None:
+    st.subheader("명령 번역")
+    table = load_filters()
+    for label, command in (
+        ("Wireshark", to_wireshark(conds, table)),
+        ("tshark", to_tshark(conds, table, filename)),
+        ("awk", to_awk(conds, table, filename) if awk_ok else None),
+    ):
+        st.caption(label)
+        st.code(command or "번역 없음")
 
 
 def _summary_time(
@@ -367,6 +444,7 @@ with log_tab:
             )
             st.caption("지원 형식 보기 · 다른 파일 올리기")
         else:
+            visible_log_records = _filtered_records(log_records, "로그")
             time_center = st.session_state.get("time_center")
             time_from = st.session_state.get("time_link_from")
             log_highlights = (
@@ -374,14 +452,21 @@ with log_tab:
                 if time_center is not None and time_from == "packet"
                 else set()
             )
-            log_event = _render_selectable_table(
-                build_log_table(log_records, log_kind, time_settings, log_highlights),
-                HELP,
-                key="log_table",
+            log_event = (
+                _render_selectable_table(
+                    build_log_table(visible_log_records, log_kind, time_settings, log_highlights),
+                    HELP,
+                    key="log_table",
+                )
+                if visible_log_records
+                else None
+            )
+            _render_filter_commands(
+                st.session_state["step6_로그"], log_upload.name, log_kind == "access"
             )
             if log_event is not None and log_event.selection.rows:
                 index = log_event.selection.rows[0]
-                when = record_time(log_records[index], log_kind, time_settings)
+                when = record_time(visible_log_records[index], log_kind, time_settings)
                 if when is not None:
                     st.session_state["time_center"] = when
                     st.session_state["time_link_from"] = "log"
@@ -413,7 +498,7 @@ with conversation_tab:
             if selected_rows:
                 chosen_conversation = conversations[selected_rows[0]]
         else:
-            _show_empty_records()
+            _show_empty_records("conversation_empty")
     else:
         st.info("아직 파일이 없습니다")
         st.write("로그나 pcap 파일을 올리면 여기에 요약이 나옵니다.")
@@ -432,14 +517,15 @@ with packet_tab:
             set(chosen_conversation.packet_numbers) if chosen_conversation else set()
         )
         highlighted = conversation_highlights | time_highlights
-        packet_rows = build_packet_table(packet_records, highlighted)
-        if packet_records:
+        visible_packet_records = _filtered_records(packet_records, "패킷")
+        packet_rows = build_packet_table(visible_packet_records, highlighted)
+        if visible_packet_records:
             packet_event = _render_selectable_table(
                 packet_rows, HELP, key="packet_table"
             )
             if packet_event is not None and packet_event.selection.rows:
                 index = packet_event.selection.rows[0]
-                when = record_time(packet_records[index], "pcap", time_settings)
+                when = record_time(visible_packet_records[index], "pcap", time_settings)
                 if when is not None:
                     st.session_state["time_center"] = when
                     st.session_state["time_link_from"] = "packet"
@@ -453,16 +539,19 @@ with packet_tab:
                 st.info("로그 탭에서 강조해 두었습니다")
             selected_packet = st.selectbox(
                 "패킷 상세",
-                range(len(packet_records)),
-                format_func=lambda i: f"패킷 #{packet_records[i].line_number}",
+                range(len(visible_packet_records)),
+                format_func=lambda i: f"패킷 #{visible_packet_records[i].line_number}",
             )
-            record = packet_records[selected_packet]
+            record = visible_packet_records[selected_packet]
             with st.expander(f"#{record.line_number} {record.fields.get('summary') or record.kind}"):
                 st.write({key: value for key, value in record.fields.items() if value is not None})
                 st.text(f"Wireshark에서는: frame.number == {record.line_number}")
                 st.text(f"원본 값: {record.raw}")
-        elif not packet_result.notices:
-            _show_empty_records()
+        _render_filter_commands(
+            st.session_state["step6_패킷"], packet_upload.name
+        )
+        if not packet_records and not packet_result.notices:
+            _show_empty_records("packet_empty")
     else:
         st.info("아직 파일이 없습니다")
         st.write("로그나 pcap 파일을 올리면 여기에 요약이 나옵니다.")

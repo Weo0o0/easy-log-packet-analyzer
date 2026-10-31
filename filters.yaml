@@ -1,0 +1,28 @@
+src:
+  target: pcap
+  wireshark: "ip.src == {v}"
+  tshark_e: ip.src
+  zeek_cut: id.orig_h
+
+dst:
+  target: pcap
+  wireshark: "ip.dst == {v}"
+  tshark_e: ip.dst
+  zeek_cut: id.resp_h
+
+port:
+  target: pcap
+  wireshark: "udp.port == {v} || tcp.port == {v}"
+
+protocol:
+  target: pcap
+  wireshark: "{v}"
+  zeek_cut: service
+
+srcip:
+  target: access
+  awk: "$1"
+
+status:
+  target: access
+  awk: "$9"
