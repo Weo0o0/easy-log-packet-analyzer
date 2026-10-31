@@ -104,6 +104,10 @@ def test_elpa_exports_step4_helpers():
 
 
 def test_most_recent_selection_wins_across_tabs(dns_cap: Path):
+    def table_key(table):
+        version = app.session_state.get(f"{table}_version", 0)
+        return table if version == 0 else f"{table}_{version}"
+
     log_line = b'127.0.0.1 - - [30/Mar/2005:17:47:48 +0900] "GET / HTTP/1.0" 200 123\n'
     app = AppTest.from_file(str(APP)).run()
     app.file_uploader[0].set_value(("apache_logs", log_line, "application/octet-stream"))
@@ -112,19 +116,19 @@ def test_most_recent_selection_wins_across_tabs(dns_cap: Path):
     app.selectbox[0].select("access").run(timeout=20)
 
     # 1. Select packet row 0 -> packet wins
-    app.session_state["packet_table"] = {"selection": {"rows": [0], "columns": [], "cells": []}}
+    app.session_state[table_key("packet_table")] = {"selection": {"rows": [0], "columns": [], "cells": []}}
     app.run(timeout=20)
     assert app.session_state["time_link_from"] == "packet"
 
     # 2. While packet row 0 remains selected, select log row 0 -> log wins
-    app.session_state["log_table"] = {"selection": {"rows": [0], "columns": [], "cells": []}}
+    app.session_state[table_key("log_table")] = {"selection": {"rows": [0], "columns": [], "cells": []}}
     app.run(timeout=20)
     assert app.session_state["time_link_from"] == "log"
     assert any(item.value == "패킷 탭에서 강조해 두었습니다" for item in app.info)
     assert any(item.value == "로그 탭에서 고른 시각 앞뒤 몇 초를 강조해 두었습니다" for item in app.info)
 
     # 3. While log row 0 remains selected, select packet row 1 -> packet wins and log tab updates
-    app.session_state["packet_table"] = {"selection": {"rows": [1], "columns": [], "cells": []}}
+    app.session_state[table_key("packet_table")] = {"selection": {"rows": [1], "columns": [], "cells": []}}
     app.run(timeout=20)
     assert app.session_state["time_link_from"] == "packet"
     assert any(item.value == "패킷 탭에서 고른 시각 앞뒤 몇 초를 강조해 두었습니다" for item in app.info)
