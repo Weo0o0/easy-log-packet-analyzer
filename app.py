@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from html import escape
 import re
 import tempfile
 from datetime import datetime, timezone
@@ -20,6 +21,8 @@ from elpa.filters import (
     to_wireshark,
 )
 from elpa.models import ParseResult, Record
+from elpa.hints import compute_hints, load_hints
+from elpa.rules import evaluate_rules, load_rules
 from elpa.timeline import (
     TimeSettings,
     build_timeline,
@@ -338,6 +341,72 @@ def _render_filter_commands(
         st.code(command or "번역 없음")
 
 
+def _render_alerts(
+    records,
+    target: str,
+    settings: TimeSettings,
+    *,
+    scope: str,
+    unparsed: int = 0,
+    hint_items=None,
+    hint_target: str | None = None,
+) -> set[int]:
+    rules, rule_notices = load_rules()
+    hints, hint_notices = load_hints()
+    alerts = evaluate_rules(records, rules, target, settings, unparsed)
+    selected: set[int] = set()
+    enough = sum(alert.confidence == "근거 충분" for alert in alerts)
+    with st.expander(
+        f"경고 {len(alerts)}건 [근거 충분 {enough}] [더 확인 필요 {len(alerts) - enough}]",
+        expanded=True,
+    ):
+        if not alerts:
+            st.text("규칙에 걸린 경고가 없습니다. 이것은 안전하다는 뜻이 아닙니다.")
+        rule_by_id = {rule.id: rule for rule in rules}
+        for index, alert in enumerate(alerts):
+            rule = rule_by_id[alert.rule_id]
+            with st.container(border=True):
+                st.text(
+                    f"[!] [분류: {alert.category}] [level: {alert.level}] "
+                    f"[신뢰도: {alert.confidence}]"
+                )
+                st.text(f"제목: {alert.msg}")
+                st.text(f"왜 이상한가: {rule.why}")
+                st.text("근거: " + ", ".join(map(str, alert.evidence)) + "  [원본 보기]")
+                if alert.confidence == "더 확인 필요":
+                    st.text(f"더 확인 필요: {alert.confidence_reason}")
+                else:
+                    st.text(f"신뢰도 판단: {alert.confidence_reason}")
+                st.text(f"다음 확인 단계: {rule.next_steps}")
+                st.text(
+                    "Wireshark에서는: "
+                    f"{rule.wireshark_filter.replace('{track}', alert.track_value)}"
+                )
+                st.text(f"오해 주의: {rule.caution}")
+                choice = st.selectbox(
+                    "[원본 보기] 근거 줄/패킷 강조",
+                    [None, *alert.evidence],
+                    format_func=lambda value: "선택 안 함" if value is None else str(value),
+                    key=f"{scope}_alert_evidence_{index}",
+                )
+                if choice is not None:
+                    selected.add(choice)
+                if rule.suricata_example:
+                    st.caption("Suricata 룰 예시 (참고용, 실행 안 함)")
+                    st.code(rule.suricata_example)
+    matched_hints = compute_hints(
+        hint_items if hint_items is not None else records, hints, hint_target or target
+    )
+    with st.expander("오해 힌트", expanded=True):
+        for hint in matched_hints:
+            st.text(f"{hint.text} (근거: {', '.join(map(str, hint.evidence))})")
+        if not matched_hints:
+            st.text("해당하는 오해 힌트가 없습니다.")
+    for notice in (*rule_notices, *hint_notices):
+        st.warning(escape(notice))
+    return selected
+
+
 def _summary_time(
     log_records: list[Record],
     packet_records: list[Record],
@@ -433,6 +502,9 @@ st.write(_summary_time(log_records, packet_records, log_kind, time_settings))
 log_tab, packet_tab, conversation_tab = st.tabs(["로그 탭", "패킷 탭", "대화 요약 탭"])
 with log_tab:
     if log_result:
+        alert_highlights = _render_alerts(
+            log_records, log_kind, time_settings, scope="log", unparsed=log_result.unparsed
+        )
         _show_parse_notices(log_result)
         _show_unparsed(log_result)
         if not log_records and log_result.unparsed:
@@ -452,6 +524,7 @@ with log_tab:
                 if time_center is not None and time_from == "packet"
                 else set()
             )
+            log_highlights |= alert_highlights
             log_event = (
                 _render_selectable_table(
                     build_log_table(visible_log_records, log_kind, time_settings, log_highlights),
@@ -484,6 +557,16 @@ with log_tab:
 with conversation_tab:
     st.write("대화를 먼저 보고, 필요하면 패킷으로 내려갑니다")
     if packet_result:
+        conversation_alert_highlights = _render_alerts(
+            packet_records,
+            "pcap",
+            time_settings,
+            scope="conversation",
+            unparsed=packet_result.unparsed,
+            hint_items=conversations,
+            hint_target="conversation",
+        )
+        st.session_state["step7_conversation_highlights"] = conversation_alert_highlights
         conversation_rows = build_conversation_table(conversations)
         if conversation_rows:
             event = st.dataframe(
@@ -506,6 +589,9 @@ with conversation_tab:
 
 with packet_tab:
     if packet_result:
+        alert_highlights = _render_alerts(
+            packet_records, "pcap", time_settings, scope="packet", unparsed=packet_result.unparsed
+        )
         _show_parse_notices(packet_result, packets=True)
         time_center = st.session_state.get("time_center")
         time_from = st.session_state.get("time_link_from")
@@ -517,7 +603,12 @@ with packet_tab:
         conversation_highlights = (
             set(chosen_conversation.packet_numbers) if chosen_conversation else set()
         )
-        highlighted = conversation_highlights | time_highlights
+        highlighted = (
+            conversation_highlights
+            | time_highlights
+            | alert_highlights
+            | st.session_state.get("step7_conversation_highlights", set())
+        )
         visible_packet_records = _filtered_records(packet_records, "패킷")
         packet_rows = build_packet_table(visible_packet_records, highlighted)
         if visible_packet_records:

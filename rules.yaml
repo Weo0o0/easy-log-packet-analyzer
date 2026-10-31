@@ -1,0 +1,57 @@
+- id: R-001
+  version: 1
+  대상: sshd
+  조건:
+    kind: sshd 실패
+  count: 5
+  seconds: 60
+  track: srcip
+  unique: null
+  중복 억제: 60
+  level: 중간
+  category: 인증 시도 반복
+  msg: 같은 IP의 SSH 로그인 실패 반복
+  왜 이상한가: 60초 안에 같은 출발지 IP에서 SSH 비밀번호 실패가 5번 이상 반복되었습니다.
+  다음 단계: "① 같은 출발지 IP의 로그인 성공(sshd 성공) 여부 확인 ② 같은 시간대 22번 포트 연결 수 확인"
+  wireshark_filter: "ip.src == {track} && tcp.dstport == 22"
+  오해 주의: 비밀번호를 잊은 정상 사용자나 설정이 어긋난 자동화 작업에서도 같은 경고가 발생할 수 있습니다.
+  suricata_example: 'alert tcp any any -> $HOME_NET 22 (msg:"SSH 로그인 시도 반복 (참고용)"; flow:to_server; threshold: type both, track by_src, count 5, seconds 60; classtype:attempted-user; sid:1000001; rev:1;)'
+
+- id: R-002
+  version: 1
+  대상: pcap
+  조건:
+    transport: TCP
+    flags: S
+  count: 10
+  seconds: 60
+  track: src
+  unique: dport
+  중복 억제: 60
+  level: 중간
+  category: 정찰 시도
+  msg: 짧은 시간에 여러 포트 접속 (포트 스캔 의심)
+  왜 이상한가: 60초 안에 같은 출발지 IP가 서로 다른 목적지 포트 10개 이상에 연결을 시도했습니다.
+  다음 단계: "① 응답(SYN-ACK)이 온 포트가 있는지 확인 ② 같은 IP의 로그 기록 확인"
+  wireshark_filter: "ip.src == {track} && tcp.flags.syn == 1 && tcp.flags.ack == 0"
+  오해 주의: 정상 포트 점검 도구나 모니터링 장비도 같은 모양이 될 수 있습니다.
+  suricata_example: 'alert tcp any any -> $HOME_NET any (msg:"포트 스캔 의심 (참고용)"; flags:S; detection_filter: track by_src, count 10, seconds 60, unique_on dst_port; classtype:attempted-recon; sid:1000002; rev:1;)'
+
+- id: R-003
+  version: 1
+  대상: access
+  조건:
+    status: "404"
+  count: 10
+  seconds: 60
+  track: srcip
+  unique: null
+  중복 억제: 60
+  level: 낮음
+  category: 경로 확인 반복
+  msg: 짧은 시간에 404(없는 경로) 응답 반복
+  왜 이상한가: 60초 안에 같은 출발지 IP에 대해 404 상태 코드가 10번 이상 기록되었습니다.
+  다음 단계: "① 요청한 경로(path) 목록 확인 ② 뒤이어 200(성공) 응답이 있는지 확인"
+  wireshark_filter: "ip.src == {track} && http.response.code == 404"
+  오해 주의: 웹 페이지에 깨진 이미지나 링크가 있으면 일반 방문자에게도 404가 연달아 나올 수 있습니다.
+  suricata_example: 'alert http $HOME_NET any -> any any (msg:"HTTP 404 응답 반복 (참고용)"; http.stat_code; content:"404"; threshold: type both, track by_dst, count 10, seconds 60; classtype:web-application-activity; sid:1000003; rev:1;)'
