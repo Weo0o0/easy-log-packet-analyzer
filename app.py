@@ -439,12 +439,14 @@ with packet_tab:
                 packet_rows, HELP, key="packet_table"
             )
             packet_rows_sel = packet_event.selection.rows if packet_event is not None else []
-            if packet_rows_sel != st.session_state.get("prev_packet_rows", []) and packet_rows_sel:
+            prev_packet_rows = st.session_state.get("prev_packet_rows", [])
+            st.session_state["prev_packet_rows"] = list(packet_rows_sel)
+            if packet_rows_sel != prev_packet_rows and packet_rows_sel:
                 when = record_time(packet_records[packet_rows_sel[0]], "pcap", time_settings)
                 if when is not None:
                     st.session_state["time_center"] = when
                     st.session_state["time_link_from"] = "packet"
-            st.session_state["prev_packet_rows"] = list(packet_rows_sel)
+                    st.rerun()
             if chosen_conversation and conversation_highlights:
                 st.info(f"대화 {chosen_conversation.uid}의 패킷을 강조해 두었습니다")
             time_center = st.session_state.get("time_center")

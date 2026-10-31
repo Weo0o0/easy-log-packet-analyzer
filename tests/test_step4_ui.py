@@ -122,3 +122,10 @@ def test_most_recent_selection_wins_across_tabs(dns_cap: Path):
     assert app.session_state["time_link_from"] == "log"
     assert any(item.value == "패킷 탭에서 강조해 두었습니다" for item in app.info)
     assert any(item.value == "로그 탭에서 고른 시각 앞뒤 몇 초를 강조해 두었습니다" for item in app.info)
+
+    # 3. While log row 0 remains selected, select packet row 1 -> packet wins and log tab updates
+    app.session_state["packet_table"] = {"selection": {"rows": [1], "columns": [], "cells": []}}
+    app.run(timeout=20)
+    assert app.session_state["time_link_from"] == "packet"
+    assert any(item.value == "패킷 탭에서 고른 시각 앞뒤 몇 초를 강조해 두었습니다" for item in app.info)
+    assert any(item.value == "로그 탭에서 강조해 두었습니다" for item in app.info)
