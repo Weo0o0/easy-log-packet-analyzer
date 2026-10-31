@@ -39,6 +39,8 @@
 | `filters.yaml` | 필터·열 이름 → Wireshark/tshark/zeek-cut/awk 번역 | Wireshark, Zeek |
 | `rules.yaml` | 경고 규칙 | Zeek Notice, Suricata, Sigma, Wazuh |
 | `hints.yaml` | 초보 오해 힌트 | Zeek Weird |
+| `layers.yaml` | 계층·로그 종류 이름과 한 줄 설명 (7.5단계) | - |
+| `scenarios.yaml` | 기록이 보이는 흔한 상황 예시 (7.5단계, 방어·공부용) | - |
 
 ## 단계
 샘플 이름은 [samples.md](samples.md)에 있는 것입니다.
@@ -227,6 +229,97 @@
   - `rules.yaml`에 틀린 규칙 하나를 넣으면 그 규칙만 빠지고 나머지는 동작.
 - 기능: 4번(경고 카드), 5번(오해 힌트).
 
+### 7.5단계: 계층 도움 상자 (사용자 요청 기능)
+- 목표: 패킷 한 줄이나 로그 한 줄을 고르면, 그 사건이 어느 **계층**에 속하는지 그림으로 보여 주고, "이런 일이 언제, 왜 생기는지" 예시 상황을 쉬운 한국어로 보여 준다.
+- 말 풀이(처음 한 번만):
+  - 계층(layer): 네트워크 통신을 맡은 일별로 나눈 층. 이 도구는 4층만 씁니다. 링크(같은 망 안 전달, 예: 이더넷) → IP(주소로 길 찾기) → 전송(포트·연결 관리, 예: TCP/UDP) → 응용(실제 서비스 내용, 예: DNS).
+  - 로그 종류: 로그는 패킷 계층 대신 "어떤 기록인지"로 나눕니다. 예: 인증 로그(로그인 기록, sshd·evtx), 웹 접속 로그(access.log).
+  - 시나리오(scenario): "이런 기록이 보이는 흔한 상황"을 적은 짧은 설명. 방어·공부용 설명만 넣습니다.
+- **왜 7단계에 넣지 않고 따로 두나**
+  - 7단계는 여러 줄을 세어(`count`, `seconds`) 조건이 맞을 때만 나오는 경고 카드입니다. 계층 도움 상자는 줄 하나만 보고 **항상** 나오는 설명이라, 세는 규칙·신뢰도가 필요 없습니다.
+  - 7단계에 섞으면 `rules.yaml`/`hints.yaml`에 성격이 다른 칸이 늘어나 초보자가 읽기 어렵습니다.
+  - 그래도 7단계 다음에 두어 7단계의 YAML 읽기 방식(잘못된 항목만 건너뛰고 안내)과 `hints.yaml` 힌트를 같이 보여 줄 수 있게 합니다.
+  - 번호는 기존 8~11단계를 바꾸지 않으려고 `7.5단계`로 둡니다(이미 다른 문서·PR이 8~11 번호를 씀).
+- 새 파일(설계): `elpa/layer_help.py`, `layers.yaml`, `scenarios.yaml`.
+- 데이터 형식:
+  - `LayerInfo(id, name, order, text)`: `id`는 `link`/`ip`/`transport`/`app`/`log_auth`/`log_web`, `order`는 그림에서 아래→위 순서(1~4, 로그는 0).
+  - `Scenario(id, layer, match, title, why, check_next, caution)`: `match`는 조건 사전(아래 매핑 규칙), `check_next`는 "다음에 볼 것" 목록.
+  - `LayerHelp(layers: tuple[LayerInfo, ...], current: str | None, scenarios: tuple[Scenario, ...], notes: tuple[str, ...])`: 화면이 그대로 그리는 결과. `current`가 `None`이면 "설명 없음".
+- `layers.yaml` 모양(예시 3개):
+  ```yaml
+  - id: transport
+    name: 전송 계층
+    order: 3
+    text: 포트 번호로 어떤 프로그램끼리 이야기하는지 정하고, TCP는 연결을 관리합니다.
+  - id: app
+    name: 응용 계층
+    order: 4
+    text: DNS, HTTP처럼 사람이 쓰는 서비스의 실제 내용입니다.
+  - id: log_auth
+    name: 인증 로그
+    order: 0
+    text: 누가 언제 로그인을 시도했고 성공했는지 남기는 기록입니다.
+  ```
+- `scenarios.yaml` 모양(예시 3개):
+  ```yaml
+  - id: dns_query_answer
+    layer: app
+    match: {source: packet, kind: DNS}
+    title: 이름을 IP 주소로 바꾸는 질문과 대답
+    why: 웹 주소를 열 때 컴퓨터가 먼저 DNS 서버에 주소를 묻습니다.
+    check_next: [같은 대화(udp.stream)에 대답이 있는지, 대화 요약의 상태 값]
+    caution: DNS가 많이 보이는 것 자체는 보통 정상입니다.
+  - id: udp_one_side_only
+    layer: transport
+    match: {source: conversation, protocol: UDP, state: S0}
+    title: 한쪽 방향만 보이는 UDP 대화
+    why: 대답이 없었거나, 캡처한 위치에서 대답이 지나가지 않았을 수 있습니다.
+    check_next: [반대 방향 패킷이 있는지, 캡처한 위치]
+    caution: 응답이 안 보였다고 바로 문제라고 단정하지 않습니다.
+  - id: ssh_login_failed
+    layer: log_auth
+    match: {source: log, kind: sshd 실패}
+    title: SSH 로그인 실패 기록
+    why: 비밀번호를 틀렸거나 없는 계정 이름으로 접속을 시도하면 남습니다.
+    check_next: [같은 srcip의 성공 기록이 있는지, 7단계 경고 카드]
+    caution: 한두 번 실패는 오타일 때가 많습니다.
+  ```
+  - 두 파일 모두 `yaml.safe_load`로만 읽습니다. 빠진 칸이 있는 항목은 건너뛰고 `notes`에 안내합니다. 파일이 없으면 상자에 "설명 없음"만 보이고 앱은 계속 동작합니다.
+  - 시나리오 문구는 "왜 보이는지 + 무엇을 확인할지"만 씁니다. 공격 방법이나 탐지 피하는 방법은 넣지 않습니다(리뷰 때 확인).
+- 매핑 규칙(코드 값 → 계층). 실제 값은 지금 코드 기준:
+  | 입력 | 값 | 계층 `current` |
+  |---|---|---|
+  | 패킷 `Record.kind` | `DNS` 등 응용 이름 | `app` |
+  | 패킷 `Record.kind` | `TCP`, `UDP` | `transport` |
+  | 패킷 `Record.kind` | `IP`, `IPv6` | `ip` |
+  | 패킷 `Record.kind` | `Ethernet` | `link` |
+  | 패킷 `Record.kind` | `Raw` 또는 표에 없는 값 | `None` → "설명 없음" |
+  | 로그 `Record.kind` | `sshd 실패`, `sshd 성공`, `sshd 없는 사용자`, `sshd`, `evtx` | `log_auth` |
+  | 로그 `Record.kind` | `access.log` | `log_web` |
+  | 대화 `Conversation.protocol` | `TCP`/`UDP` | `transport` (그리고 `service`가 응용 이름이면 응용 계층도 함께 표시) |
+  - 패킷 `kind`는 `summary`(예: `Ethernet / IP / UDP / DNS`)의 맨 끝 이름과 같습니다. 그래서 그림에는 `summary`에 나온 층을 모두 "들어 있음"으로, `current`만 "지금 고른 것"으로 표시합니다.
+  - 응용 이름 목록(`DNS` 등)은 `layers.yaml`에 `app_names`로 두어 코드에 박지 않습니다.
+  - 시나리오는 `match`의 모든 키가 같을 때만 고릅니다(같음 비교만). 여러 개가 맞으면 파일 순서대로 최대 3개. 하나도 없으면 "이 기록에 맞는 예시 상황: 설명 없음".
+  - 대화 `state` 설명은 7단계 `hints.yaml`과 겹치지 않게, 상태 코드 뜻은 `help.yaml`/`hints.yaml`, "상황 예시"만 `scenarios.yaml`에 둡니다.
+- 하위 단계:
+  - 7.5-1. `load_layers(path)`, `load_scenarios(path)`: 읽기 + 칸 검사. 출력: 튜플과 안내 목록.
+  - 7.5-2. `layer_of(record_or_conversation, source) -> str | None`: 위 표 그대로. 순수 함수.
+  - 7.5-3. `scenarios_for(item, source, scenarios) -> tuple[Scenario, ...]`.
+  - 7.5-4. `build_layer_help(item, source, layers, scenarios) -> LayerHelp`.
+  - 7.5-5. 화면: 4단계 행 선택(`on_select='rerun'`)으로 고른 행이 하나일 때 표 아래 `st.container(border=True)` 상자에 표시(팝업 대신. 이유는 [ui.md](ui.md) 3.6). 그림은 아래 7.5-6.
+  - 7.5-6. 계층 그림: 층마다 한 줄씩 위→아래로 쌓은 칸. 지금 층은 굵은 테두리 + `▶` 기호 + "지금 고른 것" 글자(색만으로 구분 안 함). Streamlit 기본 요소(`st.columns`, `st.markdown`)로 만들고 외부 JavaScript·외부 컴포넌트는 쓰지 않습니다. HTML을 써야 하면 `st.markdown(..., unsafe_allow_html=True)`로 우리가 만든 고정 틀만 쓰고, 그 안에 들어가는 **모든 값(원본 값과 YAML 문구 둘 다)은 `html.escape`를 거친 뒤** 넣습니다.
+- 입력: 고른 `Record` 하나 또는 `Conversation` 하나, `layers.yaml`, `scenarios.yaml`. 출력: `LayerHelp`.
+- 완료 확인 방법(테스트 체크, 공개 샘플만):
+  - dns.cap 1번 패킷: `kind == "DNS"`, `summary == "Ethernet / IP / UDP / DNS"` → `current == "app"`, 그림에 4층 모두 "들어 있음". (dns.cap 38개 모두 `kind=DNS`, 같은 요약임을 2026-10-31 Mac mini에서 확인)
+  - dns.cap 대화 8개: 모두 `protocol=UDP`, `state=SF`, `history=Dd`(2026-10-31 확인) → `current == "transport"`, `udp_one_side_only`(S0) 시나리오는 나오지 않음.
+  - OpenSSH_2k.log의 `Failed password for` 줄 하나 → `log_auth`, `ssh_login_failed` 시나리오.
+  - apache_logs 한 줄 → `log_web`. security.evtx 한 건 → `log_auth`.
+  - `kind="Raw"`로 만든 작은 테스트 레코드 → "설명 없음", 오류 없음.
+  - `<script>`가 든 값을 넣은 테스트 레코드 → 화면용 문자열에 `&lt;script&gt;`로 바뀌어 들어감.
+  - `layers.yaml`이 없을 때 앱이 멈추지 않음.
+- 확인 못 함: TCP·IPv6·ARP처럼 dns.cap에 없는 계층의 실제 표시(공개 샘플에 아직 없음). `st.container(border=True)`가 Streamlit 1.66.1에서 그대로 동작하는지는 구현 때 확인. evtx를 EventID별로 더 나눌지(예: 4624 성공)는 정하지 않음.
+- 기능: 1번(도움 가이드), 5번(오해 힌트)과 연결.
+
 ### 8단계: 열 고르기와 내보내기
 - 목표: 보고 싶은 열만 골라 보고 CSV로 내보낸다. 4단계에서 미룬 기능입니다.
 - 새 파일(설계): `elpa/export.py`.
@@ -282,6 +375,7 @@
 | 5 | `record_time`, `build_timeline`, `numbers_near` | `Record`, `app.py` 시간 표시 규칙 |
 | 6 | `load_filters`, `apply_filters`, `to_wireshark`, `to_tshark`, `to_awk` | 5단계 시간 |
 | 7 | `load_rules`, 경고 계산, 힌트 계산 | 5단계 시간, 6단계 조건 |
+| 7.5 | `load_layers`, `load_scenarios`, `layer_of`, `scenarios_for`, `build_layer_help` | 4단계 행 선택, 7단계 YAML 읽기 방식 |
 | 8 | `table_rows`, `to_csv` | 4단계 표, 6단계 번역 |
 | 9 | `render_note` | 6·7단계 결과 |
 | 10 | `read_zeek_conn` | `Conversation`, `ParseResult` |
