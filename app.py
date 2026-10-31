@@ -264,6 +264,7 @@ def _render_selectable_table(rows: list[dict], help_data: dict, *, key: str):
     has_highlight = "표시" in frame.columns and frame["표시"].astype(str).str.contains(
         "강조"
     ).any()
+    version = st.session_state.get(f"{key}_version", 0)
     return st.dataframe(
         _style_highlights(frame) if has_highlight else frame,
         width="stretch",
@@ -271,7 +272,7 @@ def _render_selectable_table(rows: list[dict], help_data: dict, *, key: str):
         column_config=_columns(help_data, list(rows[0])),
         on_select="rerun",
         selection_mode="single-row",
-        key=key,
+        key=key if version == 0 else f"{key}_{version}",
     )
 
 
@@ -542,6 +543,8 @@ with log_tab:
             st.session_state["prev_log_rows"] = list(log_rows)
             if log_rows != prev_log_rows:
                 if log_rows:
+                    st.session_state["packet_table_version"] = st.session_state.get("packet_table_version", 0) + 1
+                    st.session_state["prev_packet_rows"] = []
                     when = record_time(visible_log_records[log_rows[0]], log_kind, time_settings)
                     if when is not None:
                         st.session_state["time_center"] = when
@@ -626,6 +629,8 @@ with packet_tab:
             st.session_state["prev_packet_rows"] = list(packet_rows_sel)
             if packet_rows_sel != prev_packet_rows:
                 if packet_rows_sel:
+                    st.session_state["log_table_version"] = st.session_state.get("log_table_version", 0) + 1
+                    st.session_state["prev_log_rows"] = []
                     when = record_time(visible_packet_records[packet_rows_sel[0]], "pcap", time_settings)
                     if when is not None:
                         st.session_state["time_center"] = when
