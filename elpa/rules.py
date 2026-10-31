@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections import defaultdict
+from collections import Counter, defaultdict
 from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import datetime
@@ -331,20 +331,6 @@ def _verify_raw(record: Record, rule: Rule, track_val: str) -> bool:
     return True
 
 
-def _window_meets_count(
-    window: Sequence[tuple[datetime, Record]], rule: Rule
-) -> tuple[bool, int]:
-    if rule.unique is None:
-        n = len(window)
-        return n >= rule.count, n
-    uniq = {
-        r.fields.get(rule.unique)
-        for _, r in window
-        if r.fields.get(rule.unique)
-    }
-    return len(uniq) >= rule.count, len(uniq)
-
-
 def evaluate_rules(
     records: Sequence[Record] | ParseResult,
     rules: Sequence[Rule] | None = None,
@@ -404,11 +390,24 @@ def evaluate_rules(
             items.sort(key=lambda pair: (pair[0], pair[1].line_number))
             windows: list[tuple[int, int]] = []
             left = 0
+            counts: Counter[str] = Counter()  # incremental: O(n) instead of re-slicing per record
+
+            def _key(rec: Record) -> str | None:
+                return rec.fields.get(rule.unique) if rule.unique else "x"
+
             for right in range(len(items)):
+                k = _key(items[right][1])
+                if k:
+                    counts[k] += 1
                 while (items[right][0] - items[left][0]).total_seconds() > rule.seconds:
+                    k = _key(items[left][1])
+                    if k:
+                        counts[k] -= 1
+                        if not counts[k]:
+                            del counts[k]
                     left += 1
-                ok, _ = _window_meets_count(items[left : right + 1], rule)
-                if ok:
+                n = sum(counts.values()) if rule.unique is None else len(counts)
+                if n >= rule.count:
                     windows.append((left, right))
 
             if not windows:
@@ -424,9 +423,11 @@ def evaluate_rules(
                     clusters.append([(l_idx, r_idx)])
 
             for cluster in clusters:
-                ev_indices = sorted({
-                    i for l_idx, r_idx in cluster for i in range(l_idx, r_idx + 1)
-                })
+                ev_indices: list[int] = []
+                covered = -1  # windows advance monotonically, so only add the new tail
+                for l_idx, r_idx in cluster:
+                    ev_indices.extend(range(max(l_idx, covered + 1), r_idx + 1))
+                    covered = max(covered, r_idx)
                 evidence = tuple(items[i][1].line_number for i in ev_indices)
                 ev_records = [by_number[num] for num in evidence if num in by_number]
 

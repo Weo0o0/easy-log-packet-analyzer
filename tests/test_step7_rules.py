@@ -239,3 +239,21 @@ def test_unique_dport_and_confidence_degradation_reasons() -> None:
     assert "읽지 못한 줄 2개" in degraded[0].confidence_reason
     assert "시간을 읽지 못한 레코드" in degraded[0].confidence_reason
     assert 99 not in degraded[0].evidence
+
+
+def test_dense_same_time_records_are_linear_and_unique_window_expires() -> None:
+    import time
+
+    rules, _ = load_rules(RULES_YAML)
+    scan = next(r for r in rules if r.id == "R-002")
+
+    def rec(i: int, t: float, dport: str) -> Record:
+        f = {"time": f"{t:.6f}", "src": "10.0.0.9", "dst": "10.0.0.1", "sport": "1",
+             "dport": dport, "transport": "TCP", "protocol": "TCP", "flags": "S",
+             "length": "60", "summary": "x"}
+        return Record(line_number=i, kind="TCP", fields=f, raw=str(i))
+
+    dense = [rec(i, 1.7e9, "80") for i in range(1, 30001)]  # one port: never unique enough
+    start = time.perf_counter()
+    assert evaluate_rules(dense, [scan], target="pcap") == []
+    assert time.perf_counter() - start < 5
