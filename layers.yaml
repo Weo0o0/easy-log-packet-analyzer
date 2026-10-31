@@ -1,0 +1,36 @@
+app_names:
+  - DNS
+  - HTTP
+  - HTTPS
+  - TLS
+  - SSH
+  - DHCP
+  - NTP
+  - FTP
+  - SMTP
+
+layers:
+  - id: link
+    name: 링크 계층
+    order: 1
+    text: "같은 망 안에서 기기끼리 직접 데이터를 전달합니다(예: Ethernet)."
+  - id: ip
+    name: IP 계층
+    order: 2
+    text: "출발지와 목적지 IP 주소로 데이터가 갈 길을 찾습니다(예: IP, IPv6)."
+  - id: transport
+    name: 전송 계층
+    order: 3
+    text: "포트 번호로 어떤 프로그램끼리 이야기하는지 정하고, TCP는 연결을 관리합니다."
+  - id: app
+    name: 응용 계층
+    order: 4
+    text: "DNS, HTTP처럼 사람이 쓰는 서비스의 실제 내용입니다."
+  - id: log_auth
+    name: 인증 로그
+    order: 0
+    text: "누가 언제 로그인을 시도했고 성공했는지 남기는 기록입니다."
+  - id: log_web
+    name: 웹 접속 로그
+    order: 0
+    text: "웹 서버에 어떤 경로를 요청했고 어떤 상태 코드로 응답했는지 남기는 기록입니다."
