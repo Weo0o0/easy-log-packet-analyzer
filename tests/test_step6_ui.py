@@ -40,4 +40,15 @@ def test_zero_result_uses_ui_copy():
         "필터를 지우거나, 시간 범위를 넓히거나, 다른 열을 골라 보세요."
         for item in app.markdown
     )
-    assert any(item.value == "필터 지우기" for item in app.caption)
+    assert any(item.label == "필터 지우기" for item in app.button)
+
+
+def test_clear_filters_button_restores_rows():
+    app = packet_app()
+    app.session_state["step6_패킷"] = [FilterCond("port", "==", "not-present")]
+    app.run(timeout=20)
+
+    next(item for item in app.button if item.label == "필터 지우기").click().run(timeout=20)
+
+    assert app.session_state["step6_패킷"] == []
+    assert len(app.dataframe(key="packet_table").value) == 38

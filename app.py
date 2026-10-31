@@ -211,7 +211,10 @@ def _show_empty_records() -> None:
         "지금 필터에 맞는 로그/패킷이 0건입니다.\n\n"
         "필터를 지우거나, 시간 범위를 넓히거나, 다른 열을 골라 보세요."
     )
-    st.caption("필터 지우기")
+    if st.button("필터 지우기"):
+        st.session_state["step6_로그"] = []
+        st.session_state["step6_패킷"] = []
+        st.rerun()
 
 
 def _show_file_error(error: ValueError) -> None:
