@@ -1,0 +1,55 @@
+- id: H-001
+  대상: conversation
+  조건:
+    protocol: UDP
+    state: S0
+  text: 응답이 안 보였을 뿐, 캡처 위치 때문일 수 있습니다.
+
+- id: H-002
+  대상: conversation
+  조건:
+    protocol: UDP
+    state: SF
+  text: 요청과 응답이 모두 보인 정상 UDP 대화(SF)입니다. DNS 질의·응답에서 흔히 보입니다.
+
+- id: H-003
+  대상: conversation
+  조건:
+    protocol: TCP
+    state: REJ
+  text: 연결 요청이 거부(RST)된 상태(REJ)입니다. 닫힌 포트나 점검 중인 서비스에서도 흔히 나타납니다.
+
+- id: H-004
+  대상: conversation
+  조건:
+    protocol: TCP
+    state: RSTO
+  text: 시작한 쪽이 연결을 강제로 끊은 상태(RSTO)입니다. 브라우저 종료나 타임아웃 때도 생깁니다.
+
+- id: H-005
+  대상: conversation
+  조건:
+    protocol: TCP
+    state: RSTR
+  text: 응답한 쪽이 연결을 강제로 끊은 상태(RSTR)입니다. 서버가 유휴 연결을 정리할 때도 생깁니다.
+
+- id: H-006
+  대상: conversation
+  조건:
+    protocol: TCP
+    state: S0
+  text: 연결 요청(SYN)만 보이고 응답이 없는 상태(S0)입니다. 일시적인 네트워크 지연이나 캡처 위치 때문일 수 있습니다.
+
+- id: H-007
+  대상: conversation
+  조건:
+    protocol: TCP
+    state: OTH
+  text: 연결 시작(SYN) 이후 중간부터 캡처된 대화(OTH)입니다.
+
+- id: H-008
+  대상: pcap
+  조건:
+    transport: TCP
+    flags: R
+  text: TCP RST 패킷은 정상적인 연결 종료나 닫힌 포트 안내에서도 자주 발생하므로 바로 공격으로 단정하지 않습니다.
