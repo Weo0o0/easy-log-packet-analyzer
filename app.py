@@ -315,9 +315,9 @@ def _filtered_records(records: list[Record], kind: str) -> list[Record]:
                 st.session_state[key] = conds
                 st.rerun()
     for index, cond in enumerate(conds):
-        left, right = st.columns([5, 1])
-        left.text(f"{cond.field} == {cond.value}")
-        if right.button("지우기", key=f"{key}_remove_{index}"):
+        button_col, chip_col = st.columns([1, 5])
+        chip_col.text(f"{cond.field} == {cond.value}")
+        if button_col.button("지우기", key=f"{key}_remove_{index}"):
             conds.pop(index)
             st.session_state[key] = conds
             st.rerun()
@@ -538,12 +538,18 @@ with log_tab:
                 st.session_state["step6_로그"], log_upload.name, log_kind == "access"
             )
             log_rows = log_event.selection.rows if log_event is not None else []
-            if log_rows != st.session_state.get("prev_log_rows", []) and log_rows:
-                when = record_time(visible_log_records[log_rows[0]], log_kind, time_settings)
-                if when is not None:
-                    st.session_state["time_center"] = when
-                    st.session_state["time_link_from"] = "log"
+            prev_log_rows = st.session_state.get("prev_log_rows", [])
             st.session_state["prev_log_rows"] = list(log_rows)
+            if log_rows != prev_log_rows:
+                if log_rows:
+                    when = record_time(visible_log_records[log_rows[0]], log_kind, time_settings)
+                    if when is not None:
+                        st.session_state["time_center"] = when
+                        st.session_state["time_link_from"] = "log"
+                elif st.session_state.get("time_link_from") == "log":
+                    st.session_state.pop("time_center", None)
+                    st.session_state.pop("time_link_from", None)
+                st.rerun()
             time_center = st.session_state.get("time_center")
             time_from = st.session_state.get("time_link_from")
             if time_center is not None and time_from == "log":
@@ -618,12 +624,16 @@ with packet_tab:
             packet_rows_sel = packet_event.selection.rows if packet_event is not None else []
             prev_packet_rows = st.session_state.get("prev_packet_rows", [])
             st.session_state["prev_packet_rows"] = list(packet_rows_sel)
-            if packet_rows_sel != prev_packet_rows and packet_rows_sel:
-                when = record_time(visible_packet_records[packet_rows_sel[0]], "pcap", time_settings)
-                if when is not None:
-                    st.session_state["time_center"] = when
-                    st.session_state["time_link_from"] = "packet"
-                    st.rerun()
+            if packet_rows_sel != prev_packet_rows:
+                if packet_rows_sel:
+                    when = record_time(visible_packet_records[packet_rows_sel[0]], "pcap", time_settings)
+                    if when is not None:
+                        st.session_state["time_center"] = when
+                        st.session_state["time_link_from"] = "packet"
+                elif st.session_state.get("time_link_from") == "packet":
+                    st.session_state.pop("time_center", None)
+                    st.session_state.pop("time_link_from", None)
+                st.rerun()
             if chosen_conversation and conversation_highlights:
                 st.info(f"대화 {chosen_conversation.uid}의 패킷을 강조해 두었습니다")
             time_center = st.session_state.get("time_center")
