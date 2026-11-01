@@ -330,14 +330,12 @@ def _render_alerts(
     )
     if not alerts:
         st.text("규칙에 걸린 경고가 없습니다. 이것은 안전하다는 뜻이 아닙니다.")
-    with st.expander(f"경고 {len(alerts)}건", expanded=False) as alerts_expander:
-      if alerts_expander.open:
-        rule_by_id = {rule.id: rule for rule in rules}
-        for index, alert in enumerate(alerts):
-            rule = rule_by_id[alert.rule_id]
-            trust = f"[{alert.confidence}]"
-            with st.expander(f"[{alert.level}] {trust} {alert.msg}", expanded=False) as alert_expander:
-              if alert_expander.open:
+    rule_by_id = {rule.id: rule for rule in rules}
+    for index, alert in enumerate(alerts):
+        rule = rule_by_id[alert.rule_id]
+        trust = f"[{alert.confidence}]"
+        with st.expander(f"[{alert.level}] {trust} {alert.msg}", expanded=False) as alert_expander:
+            if alert_expander.open:
                 color = "#22c55e" if alert.confidence == "근거 충분" else "#f59e0b"
                 st.markdown(
                     f'<div style="border:1px solid {color};padding:.5rem;border-radius:.5rem">'
