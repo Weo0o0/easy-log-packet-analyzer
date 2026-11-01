@@ -10,6 +10,12 @@ def _table_key(app, table):
     return table if version == 0 else f"{table}_{version}"
 
 
+def _show_tables(app, *names):
+    for name in names:
+        app.session_state[f"sub_{name}"] = "표"
+    return app.run(timeout=30)
+
+
 def test_log_selection_updates_link_and_highlights_in_same_run(openssh_log, dns_cap):
     app = AppTest.from_file(str(ROOT / "app.py")).run()
     app.file_uploader[0].set_value(
@@ -20,6 +26,7 @@ def test_log_selection_updates_link_and_highlights_in_same_run(openssh_log, dns_
     )
     app.run(timeout=30)
     app.number_input[0].set_value(2023).run(timeout=30)
+    app = _show_tables(app, "log", "packet")
 
     app.session_state[_table_key(app, "log_table")] = {"selection": {"rows": [0], "columns": [], "cells": []}}
     app.run(timeout=30)
@@ -39,6 +46,7 @@ def test_clearing_log_selection_clears_its_time_link_without_rerun_loop(openssh_
     )
     app.run(timeout=30)
     app.number_input[0].set_value(2023).run(timeout=30)
+    app = _show_tables(app, "log", "packet")
     app.session_state[_table_key(app, "log_table")] = {"selection": {"rows": [0], "columns": [], "cells": []}}
     app.run(timeout=30)
 
@@ -61,6 +69,7 @@ def test_selection_in_other_table_clears_stale_dataframe_selection(openssh_log, 
     )
     app.run(timeout=30)
     app.number_input[0].set_value(2023).run(timeout=30)
+    app = _show_tables(app, "log", "packet")
 
     app.session_state[_table_key(app, "log_table")] = {"selection": {"rows": [0], "columns": [], "cells": []}}
     app.run(timeout=30)

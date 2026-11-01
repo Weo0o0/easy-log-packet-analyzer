@@ -122,14 +122,16 @@ def test_warning_list_is_a_summary_with_confidence_labels(openssh_log):
     assert high + medium + low == total
     assert enough + needs_check == total
 
-    cards = [
-        item.label
-        for item in app.expander
-        if re.match(r"^\[(높음|중간|낮음)\]", item.label)
-    ]
+    cards = [item for item in app.expander if re.match(r"^\[(높음|중간|낮음)\]", item.label)]
     assert len(cards) == total
-    assert any("[근거 충분]" in label for label in cards)
-    assert any("[더 확인 필요]" in label for label in cards)
+    assert any("[근거 충분]" in item.label for item in cards)
+    assert any("[더 확인 필요]" in item.label for item in cards)
+    assert all(item.proto.expanded is False for item in cards)
+    assert not any(re.fullmatch(r"경고 \d+건", item.label) for item in app.expander)
+
+    evidence = [value for value in values if value.startswith("근거:")]
+    inside = _expander_strings(app)
+    assert all(value in inside for value in evidence)
 
 
 def test_alert_evidence_stays_inside_expanders(openssh_log):
