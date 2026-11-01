@@ -335,42 +335,42 @@ def _render_alerts(
         rule = rule_by_id[alert.rule_id]
         trust = f"[{alert.confidence}]"
         with st.expander(f"[{alert.level}] {trust} {alert.msg}", expanded=False) as alert_expander:
-            if alert_expander.open:
-                color = "#22c55e" if alert.confidence == "근거 충분" else "#f59e0b"
-                st.markdown(
-                    f'<div style="border:1px solid {color};padding:.5rem;border-radius:.5rem">'
-                    f'<b>{escape(trust)}</b></div>', unsafe_allow_html=True
-                )
-                st.text(f"[!] [분류: {alert.category}] [level: {alert.level}]")
-                st.text(f"제목: {alert.msg}")
-                st.text(f"왜 이상한가: {rule.why}")
-                st.text("근거: " + ", ".join(map(str, alert.evidence)) + "  [원본 보기]")
-                if alert.confidence == "더 확인 필요":
-                    st.text(f"더 확인 필요: {alert.confidence_reason}")
-                else:
-                    st.text(f"신뢰도 판단: {alert.confidence_reason}")
-                st.text(f"다음 확인 단계: {rule.next_steps}")
-                st.text("Wireshark에서는: " + rule.wireshark_filter.replace("{track}", alert.track_value))
-                st.text(f"오해 주의: {rule.caution}")
-                choice = st.selectbox(
-                    "[원본 보기] 근거 줄/패킷 강조", [None, *alert.evidence],
-                    format_func=lambda value: "선택 안 함" if value is None else str(value),
-                    key=f"{scope}_alert_evidence_{index}",
-                )
-                if choice is not None:
-                    selected.add(choice)
-                if rule.suricata_example:
-                    with st.expander("Suricata 룰 예시 (참고용, 실행 안 함)", expanded=False):
-                        st.code(rule.suricata_example)
+            color = "#22c55e" if alert.confidence == "근거 충분" else "#f59e0b"
+            st.markdown(
+                f'<div style="border:1px solid {color};padding:.5rem;border-radius:.5rem">'
+                f'<b>{escape(trust)}</b></div>', unsafe_allow_html=True
+            )
+            st.text(f"[!] [분류: {alert.category}] [level: {alert.level}]")
+            st.text(f"[신뢰도: {alert.confidence}]")
+            st.text(f"제목: {alert.msg}")
+            st.text(f"왜 이상한가: {rule.why}")
+            st.text("근거: " + ", ".join(map(str, alert.evidence)) + "  [원본 보기]")
+            if alert.confidence == "더 확인 필요":
+                st.text(f"더 확인 필요: {alert.confidence_reason}")
+            else:
+                st.text(f"신뢰도 판단: {alert.confidence_reason}")
+            st.text(f"다음 확인 단계: {rule.next_steps}")
+            st.text("Wireshark에서는: " + rule.wireshark_filter.replace("{track}", alert.track_value))
+            st.text(f"오해 주의: {rule.caution}")
+            choice = st.selectbox(
+                "[원본 보기] 근거 줄/패킷 강조", [None, *alert.evidence],
+                format_func=lambda value: "선택 안 함" if value is None else str(value),
+                key=f"{scope}_alert_evidence_{index}",
+            )
+            if choice is not None:
+                selected.add(choice)
+            if rule.suricata_example:
+                with st.expander("Suricata 룰 예시 (참고용, 실행 안 함)", expanded=False):
+                    st.caption("Suricata 룰 예시 (참고용, 실행 안 함)")
+                    st.code(rule.suricata_example)
     matched_hints = compute_hints(
         hint_items if hint_items is not None else records, hints, hint_target or target
     )
-    with st.expander("오해 힌트", expanded=False) as hint_expander:
-        if hint_expander.open:
-            for hint in matched_hints:
-                st.text(f"{hint.text} (근거: {', '.join(map(str, hint.evidence))})")
-            if not matched_hints:
-                st.text("해당하는 오해 힌트가 없습니다.")
+    with st.expander("오해 힌트", expanded=False):
+        for hint in matched_hints:
+            st.text(f"{hint.text} (근거: {', '.join(map(str, hint.evidence))})")
+        if not matched_hints:
+            st.text("해당하는 오해 힌트가 없습니다.")
     for notice in (*rule_notices, *hint_notices):
         st.warning(escape(notice))
     return selected
@@ -496,9 +496,8 @@ def _render_export_view(tab: str, columns: tuple[str, ...], records, filename: s
     command = to_export_command(tool, choice, filters, filename) if tool else None
     if command:
         st.code(command)
-    with st.expander("명령 번역", expanded=False) as commands:
-        if commands.open:
-            _render_filter_commands(conds or [], filename, awk_ok)
+    with st.expander("명령 번역", expanded=False):
+        _render_filter_commands(conds or [], filename, awk_ok)
     return rows
 
 
@@ -603,7 +602,8 @@ with analysis_tab:
                             st.session_state.pop("time_center", None)
                             st.session_state.pop("time_link_from", None)
                         st.rerun()
-                    if packet_upload and time_from == "log" and linked:
+                    packet_linked = numbers_near(packet_points, time_center, time_settings.window_seconds) if time_center is not None and time_from == "log" else set()
+                    if packet_upload and packet_linked:
                         st.info("패킷 탭에서 강조해 두었습니다")
                     elif packet_upload and time_from == "packet" and linked:
                         st.info("패킷 탭에서 고른 시각 앞뒤 몇 초를 강조해 두었습니다")
@@ -649,18 +649,18 @@ with analysis_tab:
                             st.session_state.pop("time_center", None)
                             st.session_state.pop("time_link_from", None)
                         st.rerun()
-                    if log_upload and time_from == "packet" and linked:
+                    log_linked = numbers_near(log_points, time_center, time_settings.window_seconds) if time_center is not None and time_from == "packet" else set()
+                    if log_upload and log_linked:
                         st.info("로그 탭에서 강조해 두었습니다")
                     elif log_upload and time_from == "log" and linked:
                         st.info("로그 탭에서 고른 시각 앞뒤 몇 초를 강조해 두었습니다")
                     if visible:
                         selected_packet = st.selectbox("패킷 상세", range(len(visible)), format_func=lambda i: f"패킷 #{visible[i].line_number}")
                         record = visible[selected_packet]
-                        with st.expander(f"#{record.line_number} {record.fields.get('summary') or record.kind}", expanded=False) as detail:
-                            if detail.open:
-                                st.write({key: value for key, value in record.fields.items() if value is not None})
-                                st.text(f"Wireshark에서는: frame.number == {record.line_number}")
-                                st.text("원본 값: 확인 못 함")
+                        with st.expander(f"#{record.line_number} {record.fields.get('summary') or record.kind}", expanded=False):
+                            st.write({key: value for key, value in record.fields.items() if value is not None})
+                            st.text(f"Wireshark에서는: frame.number == {record.line_number}")
+                            st.text("원본 값: 확인 못 함")
                 else:
                     st.info("패킷 파일을 올리면 여기에 표가 나옵니다")
             else:
