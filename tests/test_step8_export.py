@@ -20,7 +20,6 @@ from elpa.export import (
     to_csv,
     to_export_command,
     to_tshark_fields,
-    to_zeek_cut,
     untranslated_columns,
 )
 from elpa.filters import FilterCond, apply_filters, load_filters
@@ -83,7 +82,7 @@ def test_dns_cap_packet_csv_has_38_rows(dns_cap: Path) -> None:
 
     csv_bytes = to_csv(rows, choice)
     assert csv_bytes.startswith(b"\xef\xbb\xbf")
-    parsed_rows = list(csv.reader(io.StringIO(csv_bytes.decode("utf-8-sig"))))
+    parsed_rows = list(csv.reader(io.StringIO(csv_bytes.decode("utf-8-sig"), newline="")))
     assert parsed_rows[0] == list(PACKET_COLUMNS)
     assert len(parsed_rows) - 1 == 38
 
@@ -107,6 +106,14 @@ def test_table_rows_reuses_step5_time_display_and_conversations(
     assert list(rows_utc[0].keys()) == ["시간", "출발지", "상태"]
 
     conversations = build_conversations(read_pcap(str(dns_cap)).records)
+    packet = read_pcap(str(dns_cap)).records[0]
+    packet_utc = table_rows(
+        [packet], ("시간",), TimeSettings(log_tz="UTC")
+    )[0]["시간"]
+    packet_seoul = table_rows(
+        [packet], ("시간",), TimeSettings(log_tz="Asia/Seoul")
+    )[0]["시간"]
+    assert packet_utc != packet_seoul
     conv_rows = table_rows(conversations, ("대화", "출발지:포트", "상태"), TimeSettings())
     assert len(conv_rows) == 8
     assert conv_rows[0]["대화"] == "udp-0"
@@ -150,7 +157,7 @@ def test_csv_preserves_screen_row_order_after_step6_filter() -> None:
 def test_formula_injection_guard_and_utf8_bom(raw_value: str, expected: str) -> None:
     csv_bytes = to_csv([{"요약": raw_value}], ("요약",))
     assert csv_bytes.startswith(b"\xef\xbb\xbf")
-    parsed = list(csv.reader(io.StringIO(csv_bytes.decode("utf-8-sig"))))
+    parsed = list(csv.reader(io.StringIO(csv_bytes.decode("utf-8-sig"), newline="")))
     assert parsed == [["요약"], [expected]]
 
 
@@ -160,10 +167,6 @@ def test_command_translations_and_untranslated_columns() -> None:
     assert (
         to_tshark_fields(("출발지", "목적지"), table, "dns.cap")
         == "tshark -r dns.cap -T fields -E separator=, -e ip.src -e ip.dst"
-    )
-    assert (
-        to_zeek_cut(("출발지", "목적지", "종류"), table)
-        == "zeek-cut id.orig_h id.resp_h service"
     )
     assert (
         to_awk_columns(("출발지", "상태"), table, "apache_logs")
@@ -190,17 +193,8 @@ def test_command_translations_and_untranslated_columns() -> None:
         == "awk '{print $1\",\"$9}' apache_logs"
     )
 
-    zeek_with_missing = to_export_command(
-        "zeek-cut", ("출발지:포트", "목적지:포트", "종류", "흐름"), table
-    )
-    assert zeek_with_missing == "zeek-cut service"
-    assert untranslated_columns(
-        ("출발지:포트", "목적지:포트", "흐름"), table, "zeek-cut"
-    ) == ("출발지:포트", "목적지:포트", "흐름")
-
     assert to_export_command("tshark", ("요약",), table, "dns.cap") is None
     assert to_export_command("awk", ("요약",), table, "apache_logs") is None
-    assert to_export_command("zeek-cut", ("요약",), table) is None
 
 
 def test_export_command_shell_quoting_and_unsafe_yaml_rejection() -> None:
@@ -215,9 +209,8 @@ def test_export_command_shell_quoting_and_unsafe_yaml_rejection() -> None:
     )
 
     unsafe_table = {
-        "src": {"tshark_e": "ip.src; id", "zeek_cut": "id.orig_h && id"},
+        "src": {"tshark_e": "ip.src; id"},
         "srcip": {"awk": '$1; system("id")'},
     }
     assert to_tshark_fields(("출발지",), unsafe_table, "dns.cap") is None
-    assert to_zeek_cut(("출발지",), unsafe_table) is None
     assert to_awk_columns(("출발지",), unsafe_table, "apache_logs") is None

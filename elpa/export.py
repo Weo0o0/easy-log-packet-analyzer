@@ -6,11 +6,11 @@ import csv
 import io
 import re
 import shlex
-from collections.abc import Mapping, Sequence
+from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from zoneinfo import ZoneInfo
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import yaml
 
@@ -57,18 +57,6 @@ CONVERSATION_COLUMNS: tuple[str, ...] = (
     "바이트 합계",
     "흐름",
 )
-
-_FIELD_TO_HEADER: dict[str, str] = {
-    "srcip": "출발지",
-    "status": "상태",
-    "src": "출발지",
-    "dst": "목적지",
-    "port": "포트",
-    "protocol": "종류",
-    "time": "시간",
-    "user": "사용자",
-    "summary": "요약",
-}
 
 _PACKET_COL_TO_FILTER: dict[str, str] = {
     "출발지": "src",
@@ -169,23 +157,28 @@ def build_log_table(
     return rows
 
 
-def _local_packet_time(value: str | None) -> str:
+def _local_packet_time(value: str | None, settings: TimeSettings) -> str:
     if not value:
         return ""
-    return _format_when(
-        datetime.fromtimestamp(float(value), timezone.utc), subsecond=True
-    )
+    when = datetime.fromtimestamp(float(value), timezone.utc)
+    try:
+        when = when.astimezone(ZoneInfo(settings.log_tz))
+    except ZoneInfoNotFoundError:
+        pass
+    return when.strftime("%Y-%m-%d %H:%M:%S.%f")[:-3]
 
 
 def build_packet_table(
-    records: Sequence[Record], highlighted: set[int] | None = None
+    records: Sequence[Record],
+    settings: TimeSettings,
+    highlighted: set[int] | None = None,
 ) -> list[dict[str, str | int]]:
     highlighted = highlighted or set()
     return [
         {
             "번호": record.line_number,
             "표시": "[!] 강조" if record.line_number in highlighted else "",
-            "시간": _local_packet_time(record.fields.get("time")),
+            "시간": _local_packet_time(record.fields.get("time"), settings),
             "출발지": record.fields.get("src") or "",
             "목적지": record.fields.get("dst") or "",
             "포트": ":".join(
@@ -239,7 +232,7 @@ def _unwrap_columns(columns: ColumnChoice | Sequence[str]) -> tuple[str | None, 
 
 
 def table_rows(
-    records: Sequence[Record | Conversation | Mapping[str, object]],
+    records: Sequence[Record | Conversation],
     columns: ColumnChoice | Sequence[str],
     settings: TimeSettings | None = None,
     *,
@@ -253,14 +246,12 @@ def table_rows(
     resolved_settings = settings or TimeSettings()
 
     first = records[0]
-    if isinstance(first, Mapping):
-        base_rows: list[Mapping[str, object]] = list(records)  # type: ignore[arg-type]
-    elif isinstance(first, Conversation):
+    if isinstance(first, Conversation):
         base_rows = build_conversation_table(records)  # type: ignore[arg-type]
     elif isinstance(first, Record):
         group = kind_group or _infer_kind_group(first, tab)
         if group == "pcap":
-            base_rows = build_packet_table(records, highlighted=highlighted)  # type: ignore[arg-type]
+            base_rows = build_packet_table(records, resolved_settings, highlighted=highlighted)  # type: ignore[arg-type]
         else:
             base_rows = build_log_table(
                 records, group, resolved_settings, highlighted=highlighted  # type: ignore[arg-type]
@@ -268,16 +259,13 @@ def table_rows(
     else:
         return []
 
+    assert len(records) == len(base_rows)
     out: list[dict[str, str]] = []
     for item, row in zip(records, base_rows):
         filtered_row: dict[str, str] = {}
         for col in col_names:
             if col in row:
                 val = row[col]
-            elif _FIELD_TO_HEADER.get(col) in row:
-                val = row[_FIELD_TO_HEADER[col]]
-            elif isinstance(item, Record) and col in item.fields:
-                val = item.fields.get(col)
             else:
                 val = ""
             filtered_row[col] = "" if val is None else str(val)
@@ -306,8 +294,6 @@ def to_csv(
         for col in col_names:
             if col in row:
                 val = row[col]
-            elif _FIELD_TO_HEADER.get(col) in row:
-                val = row[_FIELD_TO_HEADER[col]]
             else:
                 val = ""
             csv_row.append(_sanitize_cell(val))
@@ -332,7 +318,9 @@ def _resolve_filter_entry(col: str, table: dict, tool: str) -> str | None:
     entry = table.get(field_key)
     if not isinstance(entry, dict):
         return None
-    yaml_key = "tshark_e" if tool == "tshark" else "zeek_cut"
+    if tool != "tshark":
+        return None
+    yaml_key = "tshark_e"
     val = entry.get(yaml_key)
     if isinstance(val, str) and _SAFE_FIELD_NAME.match(val):
         return val
@@ -375,16 +363,6 @@ def to_tshark_fields(
     return f"tshark -r {shlex.quote(filename)} -T fields -E separator=, {flags}"
 
 
-def to_zeek_cut(
-    columns: ColumnChoice | Sequence[str], table: dict
-) -> str | None:
-    """Build zeek-cut command for chosen columns, omitting untranslated ones."""
-    translated, _ = _partition_columns(columns, table, "zeek-cut")
-    if not translated:
-        return None
-    return f"zeek-cut {' '.join(translated)}"
-
-
 def to_awk_columns(
     columns: ColumnChoice | Sequence[str], table: dict, filename: str
 ) -> str | None:
@@ -398,9 +376,6 @@ def to_awk_columns(
     return f"awk '{{print {joined}}}' {shlex.quote(filename)}"
 
 
-to_awk_fields = to_awk_columns
-
-
 def to_export_command(
     tool: str,
     columns: ColumnChoice | Sequence[str],
@@ -408,17 +383,11 @@ def to_export_command(
     filename: str = "",
 ) -> str | None:
     """Build an export CLI command for columns with available translations."""
-    normalized = "zeek-cut" if tool in ("zeek", "zeek-cut", "zeek_cut") else tool
-    if normalized == "tshark":
+    if tool == "tshark":
         cmd = to_tshark_fields(columns, table, filename)
-    elif normalized == "zeek-cut":
-        cmd = to_zeek_cut(columns, table)
-    elif normalized == "awk":
+    elif tool == "awk":
         cmd = to_awk_columns(columns, table, filename)
     else:
         cmd = None
 
     return cmd
-
-
-format_export_command = to_export_command
