@@ -166,15 +166,13 @@ def test_log_only_does_not_claim_packet_highlight(openssh_log):
     assert not any("패킷 탭에서 강조" in item.value for item in app.info)
 
 
-def test_upload_ids_are_name_and_size(openssh_log, dns_cap):
+def test_upload_ids_are_stored(openssh_log, dns_cap):
     app = AppTest.from_file(APP).run(timeout=30)
     app = _upload(app, 0, "OpenSSH_2k.log", openssh_log)
     app = _upload(app, 1, "dns.cap", dns_cap)
 
-    assert "OpenSSH_2k.log" in app.session_state["log_file_id"]
-    assert str(openssh_log.stat().st_size) in app.session_state["log_file_id"]
-    assert "dns.cap" in app.session_state["packet_file_id"]
-    assert str(dns_cap.stat().st_size) in app.session_state["packet_file_id"]
+    assert app.session_state["log_file_id"]
+    assert app.session_state["packet_file_id"]
 
 
 def test_removing_a_file_clears_time_link(openssh_log, dns_cap):
@@ -207,6 +205,26 @@ def test_replacing_a_file_clears_time_link(openssh_log, apache_log, dns_cap):
         ("apache_logs", apache_log.read_bytes(), "application/octet-stream")
     ).run(timeout=30)
 
-    assert "apache_logs" in app.session_state["log_file_id"]
+    assert app.session_state["log_file_id"]
+    assert "time_center" not in app.session_state
+    assert "time_link_from" not in app.session_state
+
+
+def test_same_name_and_size_replacement_clears_time_link(openssh_log, dns_cap):
+    app = AppTest.from_file(APP).run(timeout=30)
+    app = _upload(app, 0, "OpenSSH_2k.log", openssh_log)
+    app = _upload(app, 1, "dns.cap", dns_cap)
+    app.number_input[0].set_value(2023).run(timeout=30)
+    app = _set_subtab(app, "표")
+    app = _select_row(app, "packet_table")
+    assert "time_center" in app.session_state
+
+    original = openssh_log.read_bytes()
+    replacement = original.replace(b"Accepted", b"Rejected", 1)
+    assert replacement != original and len(replacement) == len(original)
+    app.file_uploader[0].set_value(
+        ("OpenSSH_2k.log", replacement, "application/octet-stream")
+    ).run(timeout=30)
+
     assert "time_center" not in app.session_state
     assert "time_link_from" not in app.session_state

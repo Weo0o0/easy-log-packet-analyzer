@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import replace
 from html import escape
+import hashlib
 import re
 import tempfile
 from datetime import datetime, timezone
@@ -504,7 +505,13 @@ def _clear_upload_links():
 
 
 def _file_id(upload):
-    return f"{upload.name}:{len(upload.getvalue())}" if upload else None
+    if not upload:
+        return None
+    file_id = getattr(upload, "file_id", None)
+    if file_id is not None:
+        return file_id
+    content = upload.getvalue()
+    return f"{upload.name}:{len(content)}:{hashlib.sha256(content).hexdigest()}"
 
 
 def _render_export_view(tab: str, columns: tuple[str, ...], records, filename: str,
