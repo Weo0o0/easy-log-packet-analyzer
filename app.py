@@ -446,7 +446,12 @@ def _learning_view() -> None:
     index = max(0, min(len(scenarios) - 1, int(st.session_state.get("learning_index", 0))))
     st.session_state["learning_index"] = index
     updated = card_swiper([item.title for item in scenarios], index, "learning_cards")
-    if isinstance(updated, int) and not isinstance(updated, bool):
+    if (
+        isinstance(updated, int)
+        and not isinstance(updated, bool)
+        and updated != st.session_state.get("learning_swiper_value")
+    ):
+        st.session_state["learning_swiper_value"] = updated
         st.session_state["learning_index"] = max(0, min(len(scenarios) - 1, updated))
         index = st.session_state["learning_index"]
     scenario = scenarios[index]

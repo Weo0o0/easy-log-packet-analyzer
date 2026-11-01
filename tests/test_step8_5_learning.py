@@ -215,6 +215,13 @@ def test_card_swiper_return_value_updates_learning_index():
     assert app.session_state["learning_index"] == 1
     assert any("2 / 4" in value for value in _strings(app))
 
+    app.session_state[key] = 2
+    app.run(timeout=30)
+    assert app.session_state["learning_index"] == 2
+    app = _click(app, "이전")
+    assert app.session_state["learning_index"] == 1
+    assert any("2 / 4" in value for value in _strings(app))
+
 
 def test_scenario_page_shows_one_stage_at_a_time():
     scenarios, _ = load_learning(LEARNING_YAML)
