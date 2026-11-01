@@ -406,6 +406,13 @@ def card_swiper(cards: list[str], index: int, key: str) -> int | None:
     return _card_swiper(cards=cards, index=index, key=key, default=None)
 
 
+def _move_learning_index(delta: int, last_index: int) -> None:
+    index = max(0, min(last_index, st.session_state["learning_index"] + delta))
+    st.session_state["learning_index"] = index
+    st.session_state["learning_cards"] = index
+    st.session_state["learning_swiper_value"] = index
+
+
 def _learning_view() -> None:
     scenarios, notices = load_learning()
     for notice in notices:
@@ -465,13 +472,21 @@ def _learning_view() -> None:
             st.session_state["learning_stage"] = 0
             st.rerun()
     previous, count, following = st.columns([1, 2, 1])
-    if previous.button("이전", key="learning_previous", disabled=index == 0):
-        st.session_state["learning_index"] = index - 1
-        st.rerun()
+    previous.button(
+        "이전",
+        key="learning_previous",
+        disabled=index == 0,
+        on_click=_move_learning_index,
+        args=(-1, len(scenarios) - 1),
+    )
     count.markdown(f"<p style='text-align:center'>{escape(str(index + 1))} / {escape(str(len(scenarios)))}</p>", unsafe_allow_html=True)
-    if following.button("다음", key="learning_next", disabled=index == len(scenarios) - 1):
-        st.session_state["learning_index"] = index + 1
-        st.rerun()
+    following.button(
+        "다음",
+        key="learning_next",
+        disabled=index == len(scenarios) - 1,
+        on_click=_move_learning_index,
+        args=(1, len(scenarios) - 1),
+    )
 
 
 def _subtab(name: str, labels: list[str]):
