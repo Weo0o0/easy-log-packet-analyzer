@@ -40,6 +40,7 @@
 | `rules.yaml` | 경고 규칙 | Zeek Notice, Suricata, Sigma, Wazuh |
 | `hints.yaml` | 초보 오해 힌트 | Zeek Weird |
 | `layers.yaml` | 계층·로그 종류 이름과 한 줄 설명 (7.5단계) | - |
+| `learning.yaml` | 시나리오 학습 카드 (8.5단계, 공부용) | - |
 | `scenarios.yaml` | 기록이 보이는 흔한 상황 예시 (7.5단계, 방어·공부용) | - |
 
 ## 단계
@@ -227,6 +228,11 @@
   - 카드에 `level`, `오해 주의`, 신뢰도가 보임.
   - dns.cap 대화에 힌트 규칙을 걸었을 때 나오는 힌트 수는 확인 못 함(대화별 `state` 값을 아직 확인 안 함).
   - `rules.yaml`에 틀린 규칙 하나를 넣으면 그 규칙만 빠지고 나머지는 동작.
+- 구현 결과 맞춤(PR #21, main 코드에서 확인 2026-11-01):
+  - 근거 강조: 표 행을 눌러 고르는 방식이 아니라, 카드마다 있는 선택 상자(`st.selectbox` "[원본 보기] 근거 줄/패킷 강조")에서 근거 번호를 고르면 그 줄/패킷을 강조합니다.
+  - `rules.yaml`의 `왜 이상한가` 칸은 영어 별칭 `why`도 받습니다(`왜 이상한가`가 있으면 그것을 씀).
+  - `더 확인 필요` 판단의 근거 수 비교는 `근거 수 <= count`입니다(설계 문구 "딱 같음"보다 넓음, 화면 이유 문구는 "기준과 딱 같습니다"로 남아 있음).
+  - **sshd는 연도가 없어서 사이드바 "sshd 연도"를 넣기 전까지 시간을 읽지 못해 sshd 경고가 0건입니다.** 화면에 이 안내를 보이게 해야 합니다(지금은 사이드바에 "연도는 직접 고른 값" 문구만 있음). 함수를 설정 없이 직접 부르면 기본 연도 2023을 씁니다(`elpa/rules.py`, 테스트용).
 - 기능: 4번(경고 카드), 5번(오해 힌트).
 
 ### 7.5단계: 계층 도움 상자 (사용자 요청 기능)
@@ -318,6 +324,14 @@
   - `<script>`가 든 값을 넣은 테스트 레코드 → 화면용 문자열에 `&lt;script&gt;`로 바뀌어 들어감.
   - `layers.yaml`이 없을 때 앱이 멈추지 않음.
 - 확인 못 함: TCP·IPv6·ARP처럼 dns.cap에 없는 계층의 실제 표시(공개 샘플에 아직 없음). `st.container(border=True)`가 Streamlit 1.66.1에서 그대로 동작하는지는 구현 때 확인. evtx를 EventID별로 더 나눌지(예: 4624 성공)는 정하지 않음.
+- 구현 결과 맞춤(PR #23, main 코드에서 확인 2026-11-01):
+  - `layers.yaml` 실제 모양은 최상위 `{app_names: [...], layers: [...]}`입니다. 읽기 함수는 위 설계의 목록 모양(항목 안 `app_names` 포함)도 받습니다.
+  - 그림에서 이 기록에 없는 층은 `없음`으로 표시합니다([ui.md](ui.md) 3.6).
+  - 대화 시나리오는 `match`의 `kind` 자리에 `Conversation.service`(예: `DNS`)를 넣어 비교합니다.
+  - `layer_of`와 읽기 함수에는 응용 이름 목록 등 선택 인자가 더 있습니다(없으면 `layers.yaml` 값 사용).
+  - `scenarios.yaml`에는 8개가 있습니다: `dns_query_answer`, `udp_one_side_only`, `udp_dns_conversation`, `ssh_login_failed`, `ssh_login_accepted`, `ssh_invalid_user`, `web_access_request`, `windows_event_auth`.
+  - 로그 탭에서 도움 상자는 필터 명령 번역 상자 아래에 나옵니다.
+  - 후속 작업: 문구에 남은 영어 용어 `EventID`, `udp.stream`, `srcip`를 쉬운 말로 바꾸거나 처음 나올 때 뜻을 붙입니다.
 - 기능: 1번(도움 가이드), 5번(오해 힌트)과 연결.
 
 ### 8단계: 열 고르기와 내보내기
@@ -338,7 +352,97 @@
   - apache_logs에서 출발지 IP·상태 코드만 골라 만든 CSV(머리글 제외)가 `awk '{print $1","$9}' apache_logs` 결과와 줄마다 같음. 줄 수 10,000(1단계 값). 1단계 정규식에 안 맞는 줄이 있으면 차이가 날 수 있으니 차이는 테스트에서 직접 확인.
   - dns.cap 패킷 CSV 줄 수 38. tshark 결과와 비교는 tshark 설치 후(확인 못 함).
   - `=`로 시작하는 값을 넣은 작은 테스트 데이터에서 `'`가 붙음.
+- 구현 결과 맞춤(PR #25, main 코드에서 확인 2026-11-01):
+  - 명령 번역은 access.log → `awk`, 패킷 → `tshark`만 보여 줍니다. 대화·sshd·evtx 표는 `번역 없음`입니다. `zeek-cut`은 10단계(Zeek conn.log 읽기) 뒤에만 보여 줍니다.
+  - tshark 결과와 CSV 비교는 하지 않았습니다(Mac mini에 tshark 없음, 확인 못 함).
+  - **어긋난 점(고칠 것)**: CSV에는 6단계 필터가 반영되지만, 화면의 명령 문자열(`to_export_command`)에는 6단계 필터 조건이 들어가지 않습니다. 그래서 필터를 건 상태에서는 명령 결과와 CSV가 다를 수 있습니다.
 - 기능: 8번.
+
+### 8.5단계: 시나리오 학습 화면 (사용자 요청 기능)
+- 순서: 8단계 다음, 9~11단계보다 먼저 만듭니다. 9단계(공부 노트)가 나중에 "본 시나리오"를 노트에 넣을 수 있게 하기 위해서입니다. 기존 8~11 번호는 바꾸지 않으려고 `8.5`로 둡니다.
+- 목표: 첫 화면에서 시나리오 카드 여러 장을 좌우로 넘겨 고르고, 고른 시나리오를 "원인 → 그 결과 생기는 패킷/로그 → 결과" 카드 3장으로 한 장씩 넘겨 본다. 공부 전용이며 **올린 파일과 연결하지 않습니다**.
+- 말 풀이(처음 한 번만):
+  - 스와이프(swipe): 마우스나 손가락으로 화면을 좌우로 끌어 넘기는 동작.
+  - 컴포넌트(component): Streamlit에 없는 화면 요소를 HTML/JavaScript로 직접 만들어 끼우는 것.
+  - 양방향 컴포넌트: Python → 화면으로 값을 보내고, 화면 → Python으로 값(여기서는 고른 카드 번호)을 돌려받는 컴포넌트.
+  - CDN: 인터넷의 다른 서버에서 JavaScript 파일을 받아 쓰는 방식. 여기서는 쓰지 않습니다.
+- 화면 구조: 첫 화면 위쪽에 탭 `시나리오 학습` / `분석`을 둡니다. 지금 있는 분석 기능(업로드, 로그·패킷·대화 탭, 경고 카드 등)은 동작을 바꾸지 않고 `분석` 탭 안으로 옮깁니다. ([ui.md](ui.md) 3.7)
+- 새 파일(설계): `learning.yaml`, `elpa/learning.py`, `elpa/components/card_swiper/index.html`(로컬 정적 파일, 외부 파일 불러오기 없음).
+- 고른 시나리오(공개 샘플 기준, 숫자는 직접 확인한 값만):
+  | id | 제목 | 근거 샘플 | 확인한 값 |
+  |---|---|---|---|
+  | `ssh_repeated_fail` | 같은 곳에서 SSH 로그인 실패가 반복됨 | OpenSSH_2k.log | `Failed password for` 520줄, 그중 183.62.140.253이 286줄(grep, 2026-10-30) |
+  | `dns_query_answer` | DNS 질문과 대답 | dns.cap | 패킷 38개 모두 DNS, 대화 8개 모두 UDP·`SF`·`Dd`(2026-10-31) |
+  | `web_404` | 없는 웹 주소 요청(404)이 보임 | apache_logs | 상태 404가 213줄. 짧은 시간에 몰린 "폭주" 여부는 확인 못 함이라 "몰림" 표현은 쓰지 않음 |
+  | `udp_one_side` | 한쪽 방향만 보이는 UDP | 없음 → `교육용 예시` 가짜 데이터 | dns.cap에는 `S0` 대화가 없음(모두 `SF`) |
+  - `교육용 예시` 데이터는 문서용 주소(192.0.2.x, 198.51.100.x)만 쓰고 카드에 `교육용 예시` 배지를 항상 붙입니다.
+  - 내용은 "무슨 일이 생기면 어떤 기록이 남고, 무엇을 확인하나"만 씁니다. 공격 방법·도구 사용법·탐지 피하는 법은 넣지 않습니다.
+- `learning.yaml` 모양(`yaml.safe_load`로만 읽음):
+  ```yaml
+  scenarios:
+    - id: dns_query_answer
+      title: DNS 질문과 대답
+      sample: dns.cap            # 또는 교육용 예시
+      example_only: false
+      stages:                    # 정확히 3개: cause, evidence, result
+        - kind: cause
+          title: 원인
+          text: 컴퓨터가 웹 주소의 IP를 몰라 DNS 서버에 묻습니다.
+        - kind: evidence
+          title: 생기는 패킷
+          text: UDP 53번 포트로 질문 1개, 대답 1개가 오갑니다.
+          lines: ["Ethernet / IP / UDP / DNS"]
+        - kind: result
+          title: 결과
+          text: 대화 상태는 SF(양쪽 모두 보임)이고, 컴퓨터는 받은 IP로 접속합니다.
+    - id: udp_one_side
+      title: 한쪽 방향만 보이는 UDP
+      sample: 교육용 예시
+      example_only: true
+      stages:
+        - {kind: cause, title: 원인, text: 질문은 보냈지만 대답이 캡처 위치를 지나가지 않았습니다.}
+        - {kind: evidence, title: 생기는 패킷, text: "192.0.2.10 → 198.51.100.53 UDP 53 질문만 있음", lines: ["교육용 예시: 192.0.2.10:40000 → 198.51.100.53:53"]}
+        - {kind: result, title: 결과, text: 대화 상태 S0. 바로 문제라고 단정하지 말고 캡처 위치를 확인합니다.}
+    - id: ssh_repeated_fail
+      title: SSH 로그인 실패 반복
+      sample: OpenSSH_2k.log
+      example_only: false
+      stages:
+        - {kind: cause, title: 원인, text: 누군가 여러 비밀번호로 로그인을 계속 시도합니다.}
+        - {kind: evidence, title: 생기는 로그, text: 같은 출발지 IP의 Failed password 줄이 이어집니다. 이 샘플에서는 183.62.140.253이 286줄입니다.}
+        - {kind: result, title: 결과, text: 7단계 경고 카드가 뜰 수 있습니다. 같은 IP의 성공 기록이 있는지 확인합니다.}
+  ```
+  - 검사: `id`·`title`·`stages`가 없거나, `stages`가 3개가 아니거나, `kind` 순서가 `cause → evidence → result`가 아니면 그 시나리오만 건너뛰고 안내 문구를 남깁니다(7·7.5단계와 같은 방식). 파일이 없거나 형식이 틀리면 "시나리오 없음" 안내만 보이고 `분석` 탭은 그대로 동작합니다.
+  - Streamlit 화면(`st.markdown` 등)에 넣는 모든 값(`title`, `text`, `lines`)은 `html.escape`를 거칩니다. 컴포넌트에는 원래 문자열을 넘기고 JavaScript에서 `innerHTML` 대신 `textContent`로만 넣어 HTML로 해석되지 않게 합니다(이미 이스케이프한 값을 `textContent`로 넣으면 `&lt;` 글자가 그대로 보이므로 두 번 하지 않음).
+- 데이터 형식: `LearningStage(kind, title, text, lines: tuple[str, ...])`, `LearningScenario(id, title, sample, example_only, stages: tuple[LearningStage, ...])`.
+- Streamlit에는 스와이프가 없으므로 카드 넘기기 컴포넌트를 만듭니다.
+  - `streamlit.components.v1.declare_component("card_swiper", path=로컬_폴더)`로 선언합니다. 설치된 1.66.1에서 `declare_component(name, path=None, url=None)` 모양을 직접 확인했습니다(2026-11-01). `url`(개발 서버)은 쓰지 않고 `path`만 씁니다.
+  - `components.html(...)`은 HTML을 iframe에 보여 주기만 하고 값을 돌려주지 못합니다(한 방향). 1.66.1 함수 모양에서 반환값이 화면 요소(`DeltaGenerator`)인 것을 확인했습니다. 그래서 고른 번호를 받으려면 `declare_component`를 씁니다.
+  - 1.66.1에는 `streamlit.components.v2` 모듈도 있지만, 이번 설계에 맞는지는 확인 못 함이라 v1을 기준으로 합니다.
+  - 공식 문서 페이지(docs.streamlit.io)는 이번에 열어 보지 않아 문서와의 대조는 확인 못 함. 함수 모양만 설치본에서 확인했습니다.
+  - 컴포넌트 입력: `cards`(제목 목록, 화면에서는 `textContent`로 넣음), `index`(지금 번호), `key`. 출력: 사용자가 바꾼 번호(`int`) 또는 `None`(아직 안 바꿈).
+  - 화면 안 동작: 마우스/터치로 끈 거리가 일정 이상이면 왼쪽/오른쪽으로 넘김(기준 거리는 구현 때 정함), `←`/`→` 키, `이전`/`다음` 버튼. 바뀌면 `Streamlit.setComponentValue(번호)`로 Python에 돌려줌. 버튼은 `<button>`이라 Tab 키로 닿고 `aria-label`을 붙입니다.
+  - 컴포넌트가 실패하거나 JavaScript가 막혀도 쓸 수 있게, 컴포넌트 아래에 Streamlit 기본 `st.button("이전")`/`st.button("다음")`도 둡니다(접근성 대체 수단).
+  - 번호 저장: `st.session_state["learning_index"]`(첫 화면), `st.session_state["learning_stage"]`(시나리오 페이지, 0~2), `st.session_state["learning_open"]`(연 시나리오 id 또는 `None`). 매 실행 때 저장값을 컴포넌트의 `index`로 다시 넘겨, 다시 그려도 첫 카드로 돌아가지 않게 합니다. 번호는 `0 <= i < 카드 수`로 잘라 씁니다.
+- 하위 단계:
+  - 8.5-1. `learning.yaml` 작성(위 4개 시나리오) + `load_learning(path) -> tuple[tuple[LearningScenario, ...], list[str]]`(검사·안내).
+  - 8.5-2. `app.py`를 `시나리오 학습` / `분석` 탭으로 나누고 기존 기능을 `분석` 탭으로 옮김(동작 변경 없음, 기존 테스트 그대로 통과).
+  - 8.5-3. 카드 넘기기 컴포넌트(로컬 `index.html`, 외부 파일 없음) + Python 래퍼 `card_swiper(cards, index, key) -> int | None`.
+  - 8.5-4. 첫 화면: 카드 한 장 크게 + `n / 전체` 표시 + `열기` 버튼. `교육용 예시` 배지.
+  - 8.5-5. 시나리오 페이지: 단계 카드 한 장씩(원인 → 생기는 패킷/로그 → 결과), 클릭/탭 또는 `다음`으로 넘김, `처음으로` 버튼.
+  - 8.5-6. 세션 상태 저장과 범위 자르기.
+  - 8.5-7. 테스트.
+- 완료 확인 방법(테스트 체크):
+  - 카드가 그려짐: `learning.yaml`의 시나리오 4개 → 첫 화면 카드 수 4(Streamlit `AppTest`로 확인, 컴포넌트 iframe 안쪽은 AppTest로 못 볼 수 있어 대체 버튼과 `n / 4` 글자로 확인).
+  - 넘기기: `다음` 버튼 → 번호 0→1, 마지막에서 `다음` → 그대로 3(넘치지 않음). 컴포넌트가 1을 돌려주면 `learning_index == 1`. 실제 마우스 스와이프와 키보드 화살표는 브라우저에서 손으로 확인(자동 테스트 방법은 확인 못 함).
+  - 다시 실행해도 유지: 번호 2로 바꾼 뒤 다른 위젯을 눌러 다시 실행 → 여전히 2.
+  - 시나리오마다 단계 3개, 순서 `cause → evidence → result`.
+  - 이스케이프: `title: "<script>x</script>"`인 테스트 YAML → 화면 문자열에 `&lt;script&gt;`.
+  - 잘못된 항목: 단계가 2개인 시나리오 하나를 섞은 YAML → 그 시나리오만 빠지고 안내 1개, 나머지 3개 표시. YAML 문법 오류 파일 → "시나리오 없음", 앱 멈추지 않음.
+  - 숫자 문구 확인: `ssh_repeated_fail`의 286줄, `web_404`의 213줄이 grep 결과와 같음.
+  - 외부 주소 없음: `index.html`에 `http://`/`https://`로 불러오는 `<script src>`나 `<link>`가 없음.
+- 확인 못 함: 컴포넌트 안 스와이프가 터치 화면에서 동작하는지, `streamlit.components.v2`가 더 맞는지, AppTest로 컴포넌트 반환값을 흉내 내는 방법.
+- 기능: 1번(도움 가이드)과 5번(오해 힌트)을 학습용으로 넓힘.
 
 ### 9단계 (선택): 공부 노트 내보내기
 - 목표: 본 경고, 쓴 필터, 배운 용어를 마크다운으로 저장.
@@ -377,6 +481,7 @@
 | 7 | `load_rules`, 경고 계산, 힌트 계산 | 5단계 시간, 6단계 조건 |
 | 7.5 | `load_layers`, `load_scenarios`, `layer_of`, `scenarios_for`, `build_layer_help` | 4단계 행 선택, 7단계 YAML 읽기 방식 |
 | 8 | `table_rows`, `to_csv` | 4단계 표, 6단계 번역 |
+| 8.5 | `load_learning`, `card_swiper` | 7·7.5단계 YAML 읽기 방식, 세션 상태 |
 | 9 | `render_note` | 6·7단계 결과 |
 | 10 | `read_zeek_conn` | `Conversation`, `ParseResult` |
 | 11 | `read_eve_alerts` | `Alert`, `ParseResult` |
