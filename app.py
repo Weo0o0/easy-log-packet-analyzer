@@ -13,6 +13,19 @@ import streamlit as st
 import yaml
 
 from elpa import build_conversations, read_evtx, read_pcap, read_text_log
+from elpa.export import (
+    CONVERSATION_COLUMNS,
+    LOG_COLUMNS,
+    PACKET_COLUMNS,
+    ColumnChoice,
+    build_conversation_table,
+    build_log_table,
+    build_packet_table,
+    table_rows,
+    to_csv,
+    to_export_command,
+    untranslated_columns,
+)
 from elpa.filters import (
     FilterCond,
     apply_filters,
@@ -85,87 +98,6 @@ def _log_time_display(record: Record, kind_group: str, settings: TimeSettings) -
         return match.group(1) if match else ""
     value = record.fields.get("time")
     return str(value) if value else ""
-
-
-def build_log_table(
-    records: list[Record],
-    kind_group: str,
-    settings: TimeSettings,
-    highlighted: set[int] | None = None,
-) -> list[dict[str, str | int]]:
-    highlighted = highlighted or set()
-    rows = []
-    for record in records:
-        fields = record.fields
-        state = "실패" if "실패" in record.kind else "성공" if "성공" in record.kind else ""
-        if fields.get("status"):
-            state = str(fields["status"])
-        summary = fields.get("message") or record.kind
-        if fields.get("method") and fields.get("path"):
-            summary = f"{fields['method']} {fields['path']} · {fields.get('status') or ''}"
-        elif fields.get("EventID"):
-            summary = f"EventID {fields['EventID']}"
-        rows.append(
-            {
-                "번호": record.line_number,
-                "표시": "[!] 강조" if record.line_number in highlighted else "",
-                "시간": _log_time_display(record, kind_group, settings),
-                "출발지": fields.get("srcip") or "",
-                "사용자": fields.get("user") or fields.get("TargetUserName") or "",
-                "종류": record.kind,
-                "상태": state,
-                "요약": summary,
-            }
-        )
-    return rows
-
-
-def _local_packet_time(value: str | None) -> str:
-    if not value:
-        return ""
-    return _format_when(
-        datetime.fromtimestamp(float(value), timezone.utc), subsecond=True
-    )
-
-
-def build_packet_table(
-    records: list[Record], highlighted: set[int] | None = None
-) -> list[dict[str, str | int]]:
-    highlighted = highlighted or set()
-    return [
-        {
-            "번호": record.line_number,
-            "표시": "[!] 강조" if record.line_number in highlighted else "",
-            "시간": _local_packet_time(record.fields.get("time")),
-            "출발지": record.fields.get("src") or "",
-            "목적지": record.fields.get("dst") or "",
-            "포트": ":".join(
-                part
-                for part in (record.fields.get("sport"), record.fields.get("dport"))
-                if part
-            ),
-            "종류": record.fields.get("protocol") or record.kind,
-            "요약": record.fields.get("summary") or "",
-        }
-        for record in records
-    ]
-
-
-def build_conversation_table(conversations) -> list[dict[str, str | int | float]]:
-    return [
-        {
-            "대화": conversation.uid,
-            "출발지:포트": conversation.a,
-            "목적지:포트": conversation.b,
-            "종류": f"{conversation.protocol} ({conversation.service})",
-            "상태": f"{conversation.state} ({help_text(HELP, '상태', conversation.state)})",
-            "지속 시간": round(conversation.duration, 3),
-            "패킷 수": conversation.packets,
-            "바이트 합계": conversation.bytes,
-            "흐름": " ".join(conversation.history),
-        }
-        for conversation in conversations
-    ]
 
 
 HELP = load_help()
@@ -296,6 +228,38 @@ def _render_selectable_table(rows: list[dict], help_data: dict, *, key: str):
         selection_mode="single-row",
         key=key if version == 0 else f"{key}_{version}",
     )
+
+
+def _render_export_controls(
+    tab: str,
+    columns: tuple[str, ...],
+    records,
+    filename: str,
+    tool: str | None,
+    *,
+    kind_group: str | None = None,
+    highlighted: set[int] | None = None,
+):
+    key = f"columns_{tab}"
+    st.session_state.setdefault(key, list(columns))
+    selected = st.multiselect(
+        "열 고르기", columns, key=key
+    )
+    choice = ColumnChoice(tab, tuple(selected))
+    rows = table_rows(
+        records, choice, time_settings, kind_group=kind_group, highlighted=highlighted
+    )
+    st.download_button("CSV", to_csv(rows, choice), file_name=f"{Path(filename).stem}.csv", mime="text/csv", key=f"{tab}_csv")
+    filters = load_filters()
+    if tool:
+        command = to_export_command(tool, choice, filters, filename)
+        if command:
+            st.code(command)
+        if untranslated_columns(choice, filters, tool):
+            st.caption("번역 없음")
+    else:
+        st.caption("번역 없음")
+    return rows
 
 
 def _filtered_records(records: list[Record], kind: str) -> list[Record]:
@@ -548,12 +512,13 @@ with log_tab:
                 else set()
             )
             log_highlights |= alert_highlights
+            log_rows = _render_export_controls(
+                "logs", LOG_COLUMNS, visible_log_records, log_upload.name,
+                "awk" if log_kind == "access" else None,
+                kind_group=log_kind, highlighted=log_highlights,
+            )
             log_event = (
-                _render_selectable_table(
-                    build_log_table(visible_log_records, log_kind, time_settings, log_highlights),
-                    HELP,
-                    key="log_table",
-                )
+                _render_selectable_table(log_rows, HELP, key="log_table")
                 if visible_log_records
                 else None
             )
@@ -600,7 +565,10 @@ with conversation_tab:
             hint_target="conversation",
         )
         st.session_state["step7_conversation_highlights"] = conversation_alert_highlights
-        conversation_rows = build_conversation_table(conversations)
+        conversation_rows = _render_export_controls(
+            "conversations", CONVERSATION_COLUMNS, conversations,
+            packet_upload.name, None, kind_group="pcap",
+        )
         if conversation_rows:
             event = st.dataframe(
                 pd.DataFrame(conversation_rows),
@@ -644,7 +612,10 @@ with packet_tab:
             | st.session_state.get("step7_conversation_highlights", set())
         )
         visible_packet_records = _filtered_records(packet_records, "패킷")
-        packet_rows = build_packet_table(visible_packet_records, highlighted)
+        packet_rows = _render_export_controls(
+            "packets", PACKET_COLUMNS, visible_packet_records,
+            packet_upload.name, "tshark", kind_group="pcap", highlighted=highlighted,
+        )
         if visible_packet_records:
             packet_event = _render_selectable_table(
                 packet_rows, HELP, key="packet_table"
