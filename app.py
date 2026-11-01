@@ -328,9 +328,12 @@ def _render_export_controls(
     )
     st.download_button("CSV", to_csv(rows, choice), file_name=f"{Path(filename).stem}.csv", mime="text/csv", key=f"{tab}_csv")
     filters = load_filters()
-    st.code(to_export_command(tool, choice, filters, filename))
+    command = to_export_command(tool, choice, filters, filename)
+    if command:
+        st.code(command)
     missing = untranslated_columns(choice, filters, tool)
-    st.caption("번역 없음" + (f": {', '.join(missing)}" if missing else ""))
+    if missing:
+        st.caption(f"번역 없음: {', '.join(missing)}")
     return rows
 
 

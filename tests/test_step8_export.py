@@ -174,7 +174,7 @@ def test_command_translations_and_untranslated_columns() -> None:
     )
     assert (
         tshark_with_missing
-        == "tshark -r dns.cap -T fields -E separator=, -e ip.src (번역 없음: 포트, 요약)"
+        == "tshark -r dns.cap -T fields -E separator=, -e ip.src"
     )
 
     awk_with_missing = to_export_command(
@@ -182,20 +182,20 @@ def test_command_translations_and_untranslated_columns() -> None:
     )
     assert (
         awk_with_missing
-        == "awk '{print $1\",\"$9}' apache_logs (번역 없음: 시간)"
+        == "awk '{print $1\",\"$9}' apache_logs"
     )
 
     zeek_with_missing = to_export_command(
-        "zeek-cut", ("출발지:포트", "목적지:포트", "흐름"), table
+        "zeek-cut", ("출발지:포트", "목적지:포트", "종류", "흐름"), table
     )
-    assert (
-        zeek_with_missing
-        == "zeek-cut id.orig_h id.resp_h (번역 없음: 흐름)"
-    )
+    assert zeek_with_missing == "zeek-cut service"
+    assert untranslated_columns(
+        ("출발지:포트", "목적지:포트", "흐름"), table, "zeek-cut"
+    ) == ("출발지:포트", "목적지:포트", "흐름")
 
-    assert to_export_command("tshark", ("요약",), table, "dns.cap") == "번역 없음"
-    assert to_export_command("awk", ("요약",), table, "apache_logs") == "번역 없음"
-    assert to_export_command("zeek-cut", ("요약",), table) == "번역 없음"
+    assert to_export_command("tshark", ("요약",), table, "dns.cap") is None
+    assert to_export_command("awk", ("요약",), table, "apache_logs") is None
+    assert to_export_command("zeek-cut", ("요약",), table) is None
 
 
 def test_export_command_shell_quoting_and_unsafe_yaml_rejection() -> None:

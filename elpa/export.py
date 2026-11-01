@@ -72,9 +72,7 @@ _FIELD_TO_HEADER: dict[str, str] = {
 
 _PACKET_COL_TO_FILTER: dict[str, str] = {
     "출발지": "src",
-    "출발지:포트": "src",
     "목적지": "dst",
-    "목적지:포트": "dst",
     "포트": "port",
     "종류": "protocol",
 }
@@ -408,10 +406,9 @@ def to_export_command(
     columns: ColumnChoice | Sequence[str],
     table: dict,
     filename: str = "",
-) -> str:
-    """Build export CLI command string and mark untranslated columns as '번역 없음'."""
+) -> str | None:
+    """Build an export CLI command for columns with available translations."""
     normalized = "zeek-cut" if tool in ("zeek", "zeek-cut", "zeek_cut") else tool
-    _, missing = _partition_columns(columns, table, normalized)
     if normalized == "tshark":
         cmd = to_tshark_fields(columns, table, filename)
     elif normalized == "zeek-cut":
@@ -421,10 +418,6 @@ def to_export_command(
     else:
         cmd = None
 
-    if cmd is None:
-        return "번역 없음"
-    if missing:
-        return f"{cmd} (번역 없음: {', '.join(missing)})"
     return cmd
 
 
