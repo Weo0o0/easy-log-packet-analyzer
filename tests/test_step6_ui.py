@@ -8,6 +8,16 @@ from elpa.filters import FilterCond
 ROOT = Path(__file__).resolve().parents[1]
 
 
+def show_subtab(app: AppTest, name: str, label: str = "표", *, timeout: float = 20) -> AppTest:
+    app.session_state[f"sub_{name}"] = label
+    return app.run(timeout=timeout)
+
+
+def table_key(app: AppTest, table: str) -> str:
+    version = app.session_state.get(f"{table}_version", 0)
+    return table if version == 0 else f"{table}_{version}"
+
+
 def packet_app() -> AppTest:
     sample = ROOT / ".samples/dns.cap"
     if not sample.is_file():
@@ -20,9 +30,10 @@ def packet_app() -> AppTest:
 def test_filter_chips_and_command_boxes():
     app = packet_app()
     app.session_state["step6_패킷"] = [FilterCond("port", "==", "53")]
-    app.run(timeout=20)
+    app = show_subtab(app, "packet")
 
     assert any(item.value == "port == 53" for item in app.text)
+    app = show_subtab(app, "packet", "내보내기·명령어")
     code = [item.value for item in app.code]
     assert 'udp.port == 53 || tcp.port == 53' in code
     assert any('tshark -r dns.pcap -Y "udp.port == 53 || tcp.port == 53"' == value for value in code)
@@ -32,7 +43,7 @@ def test_filter_chips_and_command_boxes():
 def test_zero_result_uses_ui_copy():
     app = packet_app()
     app.session_state["step6_패킷"] = [FilterCond("port", "==", "not-present")]
-    app.run(timeout=20)
+    app = show_subtab(app, "packet")
 
     assert any(item.value == "조건에 맞는 줄이 없습니다" for item in app.error)
     assert any(
@@ -46,12 +57,12 @@ def test_zero_result_uses_ui_copy():
 def test_clear_filters_button_restores_rows():
     app = packet_app()
     app.session_state["step6_패킷"] = [FilterCond("port", "==", "not-present")]
-    app.run(timeout=20)
+    app = show_subtab(app, "packet")
 
     next(item for item in app.button if item.label == "필터 지우기").click().run(timeout=20)
 
     assert app.session_state["step6_패킷"] == []
-    assert len(app.dataframe(key="packet_table").value) == 38
+    assert len(app.dataframe(key=table_key(app, "packet_table")).value) == 38
 
 
 def test_both_tabs_empty_at_once_does_not_duplicate_button_id():
@@ -64,7 +75,8 @@ def test_both_tabs_empty_at_once_does_not_duplicate_button_id():
     app.file_uploader[1].set_value(("dns.pcap", packet_sample.read_bytes(), "application/octet-stream"))
     app.session_state["step6_로그"] = [FilterCond("srcip", "==", "not-present")]
     app.session_state["step6_패킷"] = [FilterCond("port", "==", "not-present")]
-    app.run(timeout=20)
+    app = show_subtab(app, "log")
+    app = show_subtab(app, "packet")
 
     assert not app.exception
     assert sum(item.label == "필터 지우기" for item in app.button) == 2

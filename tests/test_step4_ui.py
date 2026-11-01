@@ -29,6 +29,11 @@ def sample(name: str) -> Path:
     return path
 
 
+def show_subtab(app: AppTest, name: str, label: str = "표", *, timeout: float = 30) -> AppTest:
+    app.session_state[f"sub_{name}"] = label
+    return app.run(timeout=timeout)
+
+
 def metric(app: AppTest, label: str) -> str:
     return next(item.value for item in app.metric if item.label == label)
 
@@ -47,6 +52,7 @@ def test_empty_state():
 def test_log_sample_counts(filename: str, expected: str):
     path = sample(filename)
     app = run_upload(filename, path.read_bytes(), log=True, timeout=20)
+    app = show_subtab(app, "log")
     if filename == "OpenSSH_2k.log":
         assert app.dataframe[0].value["종류"].str.contains("실패").sum() == int(expected)
     elif filename == "apache_logs":
@@ -61,6 +67,7 @@ def test_dns_sample_counts():
 
     assert metric(app, "패킷") == "38"
     assert metric(app, "대화") == "8"
+    app = show_subtab(app, "packet")
     assert any(item.value == "원본 값: 확인 못 함" for item in app.text)
 
 
@@ -114,6 +121,8 @@ def test_most_recent_selection_wins_across_tabs(dns_cap: Path):
     app.file_uploader[1].set_value(("dns.cap", dns_cap.read_bytes(), "application/octet-stream"))
     app.run(timeout=20)
     app.selectbox[0].select("access").run(timeout=20)
+    app = show_subtab(app, "log")
+    app = show_subtab(app, "packet")
 
     # 1. Select packet row 0 -> packet wins
     app.session_state[table_key("packet_table")] = {"selection": {"rows": [0], "columns": [], "cells": []}}

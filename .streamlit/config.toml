@@ -2,5 +2,12 @@
 maxUploadSize = 10
 address = "127.0.0.1"
 
+[theme]
+base = "dark"
+primaryColor = "#38BDF8"
+backgroundColor = "#0E1117"
+secondaryBackgroundColor = "#262730"
+textColor = "#FAFAFA"
+
 [browser]
 gatherUsageStats = false

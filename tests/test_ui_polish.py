@@ -10,7 +10,34 @@ def _table_key(app, table):
     return table if version == 0 else f"{table}_{version}"
 
 
-def test_log_selection_updates_link_and_highlights_in_same_run(openssh_log, dns_cap):
+def _show_tables(app, *names):
+    for name in names:
+        app.session_state[f"sub_{name}"] = "표"
+    return app.run(timeout=30)
+
+
+def test_log_selection_updates_link_and_highlights_in_same_run(dns_cap):
+    app = AppTest.from_file(str(ROOT / "app.py")).run()
+    log_bytes = b"Mar 30 17:47:46 host sshd[1]: Failed password for root from 198.51.100.10 port 50000 ssh2\n"
+    app.file_uploader[0].set_value(
+        ("sshd.log", log_bytes, "application/octet-stream")
+    )
+    app.file_uploader[1].set_value(
+        ("dns.cap", dns_cap.read_bytes(), "application/octet-stream")
+    )
+    app.run(timeout=30)
+    app.number_input[0].set_value(2005).run(timeout=30)
+    app = _show_tables(app, "log", "packet")
+
+    app.session_state[_table_key(app, "log_table")] = {"selection": {"rows": [0], "columns": [], "cells": []}}
+    app.run(timeout=30)
+
+    assert app.session_state["prev_log_rows"] == [0]
+    assert app.session_state["time_link_from"] == "log"
+    assert any("로그 탭에서 고른 시각 앞뒤" in item.value for item in app.info)
+
+
+def test_log_selection_without_overlap_omits_highlight_notice(openssh_log, dns_cap):
     app = AppTest.from_file(str(ROOT / "app.py")).run()
     app.file_uploader[0].set_value(
         ("OpenSSH_2k.log", openssh_log.read_bytes(), "application/octet-stream")
@@ -20,13 +47,14 @@ def test_log_selection_updates_link_and_highlights_in_same_run(openssh_log, dns_
     )
     app.run(timeout=30)
     app.number_input[0].set_value(2023).run(timeout=30)
+    app = _show_tables(app, "log", "packet")
 
     app.session_state[_table_key(app, "log_table")] = {"selection": {"rows": [0], "columns": [], "cells": []}}
     app.run(timeout=30)
 
     assert app.session_state["prev_log_rows"] == [0]
     assert app.session_state["time_link_from"] == "log"
-    assert any("로그 탭에서 고른 시각 앞뒤" in item.value for item in app.info)
+    assert not any("로그 탭에서 고른 시각 앞뒤" in item.value for item in app.info)
 
 
 def test_clearing_log_selection_clears_its_time_link_without_rerun_loop(openssh_log, dns_cap):
@@ -39,6 +67,7 @@ def test_clearing_log_selection_clears_its_time_link_without_rerun_loop(openssh_
     )
     app.run(timeout=30)
     app.number_input[0].set_value(2023).run(timeout=30)
+    app = _show_tables(app, "log", "packet")
     app.session_state[_table_key(app, "log_table")] = {"selection": {"rows": [0], "columns": [], "cells": []}}
     app.run(timeout=30)
 
@@ -61,6 +90,7 @@ def test_selection_in_other_table_clears_stale_dataframe_selection(openssh_log, 
     )
     app.run(timeout=30)
     app.number_input[0].set_value(2023).run(timeout=30)
+    app = _show_tables(app, "log", "packet")
 
     app.session_state[_table_key(app, "log_table")] = {"selection": {"rows": [0], "columns": [], "cells": []}}
     app.run(timeout=30)

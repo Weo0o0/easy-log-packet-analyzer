@@ -16,13 +16,24 @@ def uploaded(name: str, index: int) -> AppTest:
     return app.run(timeout=30)
 
 
+def show_subtab(app: AppTest, name: str, label: str = "표") -> AppTest:
+    app.session_state[f"sub_{name}"] = label
+    return app.run(timeout=30)
+
+
+def table_key(app: AppTest, table: str) -> str:
+    version = app.session_state.get(f"{table}_version", 0)
+    return table if version == 0 else f"{table}_{version}"
+
+
 def select_row(app: AppTest, key: str, row: int) -> AppTest:
-    app.session_state[key] = {"selection": {"rows": [row], "columns": [], "cells": []}}
+    app.session_state[table_key(app, key)] = {"selection": {"rows": [row], "columns": [], "cells": []}}
     return app.run(timeout=30)
 
 
 def test_packet_layer_help_appears_for_selected_dns_packet():
     app = uploaded("dns.cap", 1)
+    app = show_subtab(app, "packet")
     app = select_row(app, "packet_table", 0)
 
     box = next(item.value for item in app.markdown if "elpa-layer-help" in item.value)
@@ -39,6 +50,7 @@ def test_packet_layer_help_appears_for_selected_dns_packet():
 
 def test_conversation_layer_help_shows_app_and_transport_for_dns():
     app = uploaded("dns.cap", 1)
+    app = show_subtab(app, "conversation")
     app = select_row(app, "conversation_table", 0)
 
     box = next(item.value for item in app.markdown if "elpa-layer-help" in item.value)
@@ -54,7 +66,8 @@ def test_packet_layer_help_is_absent_without_selection():
 
 def test_selected_openssh_failure_shows_scenario():
     app = uploaded("OpenSSH_2k.log", 0)
-    df = app.dataframe(key="log_table").value
+    app = show_subtab(app, "log")
+    df = app.dataframe(key=table_key(app, "log_table")).value
     failed_row = df.index[df["종류"].str.contains("실패")][0]
     app = select_row(app, "log_table", int(failed_row))
 
