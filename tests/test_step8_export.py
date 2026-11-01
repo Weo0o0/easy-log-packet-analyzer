@@ -139,7 +139,12 @@ def test_csv_preserves_screen_row_order_after_step6_filter() -> None:
         ("+SUM(A1:A2)", "'+SUM(A1:A2)"),
         ("-10+20", "'-10+20"),
         ("@cmd|'/c calc'!A0", "'@cmd|'/c calc'!A0"),
+        ("\t=1+1", "'\t=1+1"),
+        ("\r=1+1", "'\r=1+1"),
+        (" =1+1", "' =1+1"),
+        ("  \t@SUM(1+1)", "'  \t@SUM(1+1)"),
         ("normal_value", "normal_value"),
+        (" plain_value", " plain_value"),
     ],
 )
 def test_formula_injection_guard_and_utf8_bom(raw_value: str, expected: str) -> None:

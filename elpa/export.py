@@ -287,7 +287,7 @@ def table_rows(
 
 def _sanitize_cell(value: object) -> str:
     text = "" if value is None else str(value)
-    if text.startswith(_FORMULA_PREFIXES):
+    if text.lstrip().startswith(_FORMULA_PREFIXES) or text.startswith(("\t", "\r")):
         return f"'{text}"
     return text
 
