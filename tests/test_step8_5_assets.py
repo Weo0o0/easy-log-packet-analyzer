@@ -67,7 +67,10 @@ def test_card_swiper_is_local_without_external_assets():
     assert "innerHTML" not in html
     assert "textContent" in html
     assert "aria-label" in html
-    assert "function move(delta){glide((index+delta)*STEP)}" in html
+    assert "function move(delta){glide((target+delta)*STEP)}" in html
+    assert "pendingIndex!==null" in html
+    assert "changed=lastArgsIndex===null||argIndex!==lastArgsIndex" in html
+    assert "lastArgsIndex=argIndex" in html
     assert "pv.addEventListener('click',function(){move(-1)})" in html
     assert "nx.addEventListener('click',function(){move(1)})" in html
     assert "e.preventDefault();move(1)" in html

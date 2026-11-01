@@ -334,7 +334,7 @@ def _render_alerts(
     for index, alert in enumerate(alerts):
         rule = rule_by_id[alert.rule_id]
         trust = f"[{alert.confidence}]"
-        with st.expander(f"[{alert.level}] {trust} {alert.msg}", expanded=False) as alert_expander:
+        with st.expander(f"[{alert.level}] {trust} {alert.msg}", expanded=False):
             color = "#22c55e" if alert.confidence == "근거 충분" else "#f59e0b"
             st.markdown(
                 f'<div style="border:1px solid {color};padding:.5rem;border-radius:.5rem">'
@@ -461,6 +461,7 @@ def _learning_view() -> None:
         st.session_state["learning_swiper_value"] = updated
         st.session_state["learning_index"] = max(0, min(len(scenarios) - 1, updated))
         index = st.session_state["learning_index"]
+        st.rerun()
     scenario = scenarios[index]
     with st.container(border=True):
         st.markdown(f"### {escape(scenario.title)}")
