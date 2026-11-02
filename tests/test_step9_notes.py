@@ -86,6 +86,29 @@ def test_note_contains_alert_only_after_its_card_is_shown(openssh_log, dns_cap, 
     assert "같은 IP의 SSH 로그인 실패 반복" in downloads["공부 노트 내보내기"]
 
 
+def test_upload_change_clears_filters_but_keeps_terms(openssh_log):
+    app = AppTest.from_file(str(ROOT / "app.py")).run(timeout=30)
+    app = _upload(app, 0, "OpenSSH_2k.log", openssh_log)
+    app.session_state["note_log"] = [("filter", "old.filter == 1"), ("term", "layer.S0")]
+    app.file_uploader[0].set_value(
+        ("replacement.log", openssh_log.read_bytes(), "application/octet-stream")
+    )
+    app.run(timeout=30)
+    assert app.session_state["note_log"] == [("term", "layer.S0")]
+
+
+def test_note_log_keeps_oldest_200_entries(openssh_log):
+    app = AppTest.from_file(str(ROOT / "app.py")).run(timeout=30)
+    app = _upload(app, 0, "OpenSSH_2k.log", openssh_log)
+    app.session_state["sub_log"] = "표"
+    app.session_state["note_log"] = [("term", f"old.{index}") for index in range(200)]
+    app.run(timeout=30)
+    next(item for item in app.button if item.label == "? S0").click().run(timeout=30)
+    assert len(app.session_state["note_log"]) == 200
+    assert app.session_state["note_log"][0] == ("term", "old.0")
+    assert ("term", "상태.S0") not in app.session_state["note_log"]
+
+
 def test_render_note_escapes_untrusted_markdown_and_html():
     raw_line = "distinctive raw log line that must stay private"
     alert = Alert(

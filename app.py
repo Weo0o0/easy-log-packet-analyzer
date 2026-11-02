@@ -248,7 +248,8 @@ def _select_columns(tab, columns, records, *, kind_group=None, highlighted=None)
 def _note_log_add(kind: str, value: str) -> None:
     log = st.session_state.setdefault("note_log", [])
     entry = (kind, value)
-    if entry not in log:
+    # Keep the oldest 200 entries; later distinct entries are ignored.
+    if entry not in log and len(log) < 200:
         log.append(entry)
 
 
@@ -534,6 +535,8 @@ def _subtab(name: str, labels: list[str]):
 def _clear_upload_links():
     for key in ("time_center", "time_link_from", "prev_log_rows", "prev_packet_rows", "step7_conversation_highlights", "step7_log_highlights", "step7_packet_highlights", "note_alerts"):
         st.session_state.pop(key, None)
+    if "note_log" in st.session_state:
+        st.session_state["note_log"] = [entry for entry in st.session_state["note_log"] if entry[0] != "filter"]
     for key in ("log_table_version", "packet_table_version", "conversation_table_version"):
         st.session_state[key] = st.session_state.get(key, 0) + 1
 
