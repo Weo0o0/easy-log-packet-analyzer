@@ -109,6 +109,22 @@ def test_note_log_keeps_oldest_200_entries(openssh_log):
     assert ("term", "상태.S0") not in app.session_state["note_log"]
 
 
+def test_note_alerts_keep_oldest_200_entries(openssh_log):
+    app = AppTest.from_file(str(ROOT / "app.py")).run(timeout=30)
+    app = _upload(app, 0, "OpenSSH_2k.log", openssh_log)
+    shown = [
+        Alert(f"old.{index}", "", "낮음", "test", f"old alert {index}", (index,), "근거 충분", "")
+        for index in range(200)
+    ]
+    app.session_state["note_alerts"] = shown
+    app.session_state["note_alert_keys"] = {
+        (alert.rule_id, alert.msg, tuple(alert.evidence)) for alert in shown
+    }
+    app.run(timeout=30)
+    assert len(app.session_state["note_alerts"]) == 200
+    assert app.session_state["note_alerts"][0] == shown[0]
+
+
 def test_render_note_escapes_untrusted_markdown_and_html():
     raw_line = "distinctive raw log line that must stay private"
     alert = Alert(

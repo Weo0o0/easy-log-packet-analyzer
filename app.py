@@ -247,10 +247,12 @@ def _select_columns(tab, columns, records, *, kind_group=None, highlighted=None)
 
 def _note_log_add(kind: str, value: str) -> None:
     log = st.session_state.setdefault("note_log", [])
+    keys = st.session_state.setdefault("note_log_keys", set(log))
     entry = (kind, value)
     # Keep the oldest 200 entries; later distinct entries are ignored.
-    if entry not in log and len(log) < 200:
+    if entry not in keys and len(log) < 200:
         log.append(entry)
+        keys.add(entry)
 
 
 def _render_help_terms(scope: str) -> None:
@@ -361,13 +363,16 @@ def _render_alerts(
     if not alerts:
         st.text("규칙에 걸린 경고가 없습니다. 이것은 안전하다는 뜻이 아닙니다.")
     rule_by_id = {rule.id: rule for rule in rules}
+    shown = st.session_state.setdefault("note_alerts", [])
+    shown_keys = st.session_state.setdefault(
+        "note_alert_keys",
+        {(item.rule_id, item.msg, tuple(item.evidence)) for item in shown},
+    )
     for index, alert in enumerate(alerts):
-        shown = st.session_state.setdefault("note_alerts", [])
-        if not any(
-            (item.rule_id, item.msg, item.evidence) == (alert.rule_id, alert.msg, alert.evidence)
-            for item in shown
-        ):
+        alert_key = (alert.rule_id, alert.msg, tuple(alert.evidence))
+        if alert_key not in shown_keys and len(shown) < 200:
             shown.append(alert)
+            shown_keys.add(alert_key)
         rule = rule_by_id[alert.rule_id]
         trust = f"[{alert.confidence}]"
         with st.expander(f"[{alert.level}] {trust} {alert.msg}", expanded=False):
@@ -533,10 +538,11 @@ def _subtab(name: str, labels: list[str]):
 
 
 def _clear_upload_links():
-    for key in ("time_center", "time_link_from", "prev_log_rows", "prev_packet_rows", "step7_conversation_highlights", "step7_log_highlights", "step7_packet_highlights", "note_alerts"):
+    for key in ("time_center", "time_link_from", "prev_log_rows", "prev_packet_rows", "step7_conversation_highlights", "step7_log_highlights", "step7_packet_highlights", "note_alerts", "note_alert_keys"):
         st.session_state.pop(key, None)
     if "note_log" in st.session_state:
         st.session_state["note_log"] = [entry for entry in st.session_state["note_log"] if entry[0] != "filter"]
+        st.session_state["note_log_keys"] = set(st.session_state["note_log"])
     for key in ("log_table_version", "packet_table_version", "conversation_table_version"):
         st.session_state[key] = st.session_state.get(key, 0) + 1
 
