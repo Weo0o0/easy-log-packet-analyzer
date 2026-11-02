@@ -24,6 +24,8 @@ DOC_IP_NETS = (
 
 IPV4_RE = re.compile(r"(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)")
 
+DNS_NAME_RE = re.compile(r"(?:^|\.)(?:example\.(?:com|net|org)|example|test)$")
+
 
 def _is_doc_ip(s: str) -> bool:
     try:
@@ -31,6 +33,12 @@ def _is_doc_ip(s: str) -> bool:
     except ValueError:
         return False
     return any(ip in net for net in DOC_IP_NETS)
+
+
+def _is_doc_dns_name(name: str | bytes) -> bool:
+    if isinstance(name, bytes):
+        name = name.decode()
+    return bool(DNS_NAME_RE.search(name))
 
 
 def test_all_files_have_source_and_license_lines_in_readme():
@@ -55,23 +63,25 @@ def test_all_files_have_source_and_license_lines_in_readme():
         source, license_ = cells[2], cells[3]
         assert source, f"{rel_str} has no source line in examples/README.md"
         assert license_, f"{rel_str} has no license line in examples/README.md"
+        expected_license = "Apache-2.0" if rel_str.startswith("apache_logs/") else "MIT"
+        assert expected_license in license_, f"{rel_str} wrong license {license_!r}"
 
 
 def test_synthetic_files_only_doc_ips_in_text_and_pcaps():
     repo_root = Path(__file__).resolve().parents[1]
     examples_dir = repo_root / "examples"
 
-    auth_log = examples_dir / "ssh_repeated_fail" / "auth.log"
-    for m in IPV4_RE.findall(auth_log.read_text(encoding="utf-8")):
-        assert _is_doc_ip(m), f"non-doc IP {m} in {auth_log}"
+    for text_path in [
+        examples_dir / "ssh_repeated_fail" / "auth.log",
+        examples_dir / "README.md",
+    ]:
+        for m in IPV4_RE.findall(text_path.read_text(encoding="utf-8")):
+            assert _is_doc_ip(m), f"non-doc IP {m} in {text_path}"
 
     for pcap_path in [
         examples_dir / "dns_query_answer" / "dns_query_answer.pcap",
         examples_dir / "udp_one_side" / "udp_one_side.pcap",
     ]:
-        for m in IPV4_RE.findall(pcap_path.read_bytes().decode("latin-1")):
-            assert _is_doc_ip(m), f"non-doc IP {m} in raw bytes of {pcap_path}"
-
         with pcap_path.open("rb") as f:
             for _ts, buf in dpkt.pcap.Reader(f):
                 cur = dpkt.ethernet.Ethernet(buf)
@@ -80,6 +90,19 @@ def test_synthetic_files_only_doc_ips_in_text_and_pcaps():
                         for ipb in (cur.src, cur.dst):
                             ipstr = socket.inet_ntop(socket.AF_INET, ipb)
                             assert _is_doc_ip(ipstr), f"non-doc IP {ipstr} in {pcap_path}"
+                    if isinstance(cur, dpkt.udp.UDP):
+                        dns = dpkt.dns.DNS(cur.data)
+                        for question in dns.qd:
+                            assert _is_doc_dns_name(question.name), (
+                                f"non-example DNS name {question.name!r} in {pcap_path}"
+                            )
+                        for answer in dns.an:
+                            assert _is_doc_dns_name(answer.name), (
+                                f"non-example DNS name {answer.name!r} in {pcap_path}"
+                            )
+                            if answer.type == dpkt.dns.DNS_A:
+                                addr = socket.inet_ntop(socket.AF_INET, answer.rdata)
+                                assert _is_doc_ip(addr), f"non-doc DNS A {addr} in {pcap_path}"
                     data = getattr(cur, "data", None)
                     if data is None or isinstance(data, (bytes, bytearray)):
                         break
@@ -90,8 +113,7 @@ def test_make_examples_twice_identical_to_committed(tmp_path):
     repo_root = Path(__file__).resolve().parents[1]
     examples_dir = repo_root / "examples"
     make_examples = repo_root / "tools" / "make_examples.py"
-    venv_py = Path.home() / "orca/easy-log-packet-analyzer/.venv/bin/python"
-    py = str(venv_py) if venv_py.exists() else sys.executable
+    py = sys.executable
 
     out1 = tmp_path / "out1"
     out2 = tmp_path / "out2"
@@ -150,6 +172,8 @@ def test_pinned_counts_with_readers():
     assert len(pr_d.records) == 2
     assert len(cs_d) == 1
     c_d = cs_d[0]
+    assert c_d.protocol == "UDP"
+    assert c_d.b.endswith(":53")
     assert c_d.state == "SF"
     assert c_d.history == "Dd"
 
@@ -158,6 +182,8 @@ def test_pinned_counts_with_readers():
     assert len(pr_u.records) == 1
     assert len(cs_u) == 1
     c_u = cs_u[0]
+    assert c_u.protocol == "UDP"
+    assert c_u.b.endswith(":53")
     assert c_u.state == "S0"
     assert c_u.history == "D"
 

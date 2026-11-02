@@ -12,4 +12,4 @@
 | `udp_one_side/udp_one_side.pcap` | 교육용 예시 | `tools/make_examples.py`로 생성 (문서용 IP만 사용) | MIT (이 저장소) |
 | `README.md` | 교육용 예시 (이 문서) | 이 저장소에서 작성 | MIT (이 저장소) |
 
-합성 파일은 `~/orca/easy-log-packet-analyzer/.venv/bin/python tools/make_examples.py`로 다시 만들 수 있고, 실행할 때마다 같은 바이트가 나옵니다. 합성 파일의 주소는 문서용 IP(192.0.2.0/24, 198.51.100.0/24, 203.0.113.0/24)와 example.com 계열 도메인만 씁니다.
+합성 파일은 `python tools/make_examples.py [out_dir]`로 다시 만들 수 있고, 실행할 때마다 같은 바이트가 나옵니다. 합성 파일의 주소는 문서용 IP(192.0.2.0/24, 198.51.100.0/24, 203.0.113.0/24)와 example.com 계열 도메인만 씁니다.
