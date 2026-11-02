@@ -361,6 +361,12 @@ def _render_alerts(
         st.text("규칙에 걸린 경고가 없습니다. 이것은 안전하다는 뜻이 아닙니다.")
     rule_by_id = {rule.id: rule for rule in rules}
     for index, alert in enumerate(alerts):
+        shown = st.session_state.setdefault("note_alerts", [])
+        if not any(
+            (item.rule_id, item.msg, item.evidence) == (alert.rule_id, alert.msg, alert.evidence)
+            for item in shown
+        ):
+            shown.append(alert)
         rule = rule_by_id[alert.rule_id]
         trust = f"[{alert.confidence}]"
         with st.expander(f"[{alert.level}] {trust} {alert.msg}", expanded=False):
@@ -526,7 +532,7 @@ def _subtab(name: str, labels: list[str]):
 
 
 def _clear_upload_links():
-    for key in ("time_center", "time_link_from", "prev_log_rows", "prev_packet_rows", "step7_conversation_highlights", "step7_log_highlights", "step7_packet_highlights"):
+    for key in ("time_center", "time_link_from", "prev_log_rows", "prev_packet_rows", "step7_conversation_highlights", "step7_log_highlights", "step7_packet_highlights", "note_alerts"):
         st.session_state.pop(key, None)
     for key in ("log_table_version", "packet_table_version", "conversation_table_version"):
         st.session_state[key] = st.session_state.get(key, 0) + 1
@@ -557,27 +563,11 @@ def _render_export_view(tab: str, columns: tuple[str, ...], records, filename: s
     return rows
 
 
-def _render_note_download(file_names: list[str], log_records, packet_records) -> None:
+def _render_note_download(file_names: list[str]) -> None:
     note_log = st.session_state.setdefault("note_log", [])
-    rules, _ = load_rules()
-    alerts = []
-    if log_records:
-        alerts.extend(
-            evaluate_rules(
-                log_records, rules, log_kind, time_settings,
-                log_result.unparsed if log_result else 0,
-            )
-        )
-    if packet_records:
-        alerts.extend(
-            evaluate_rules(
-                packet_records, rules, "pcap", time_settings,
-                packet_result.unparsed if packet_result else 0,
-            )
-        )
     note = StudyNote(
         file_names=file_names,
-        alerts=alerts,
+        alerts=st.session_state.get("note_alerts", []),
         filters=[value for kind, value in note_log if kind == "filter"],
         terms=[value for kind, value in note_log if kind == "term"],
         created_at=datetime.now(timezone.utc),
@@ -652,8 +642,6 @@ with analysis_tab:
     st.caption("로그·패킷·대화의 전체 건수입니다.")
     _render_note_download(
         [upload.name for upload in (log_upload, packet_upload) if upload],
-        log_records,
-        packet_records,
     )
     st.write(_summary_time(log_records, packet_records, log_kind, time_settings))
     if not log_upload and not packet_upload:

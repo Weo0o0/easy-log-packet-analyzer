@@ -51,10 +51,39 @@ def test_note_download_has_alert_filter_term_and_evidence(openssh_log, dns_cap, 
     assert r"udp\.port == 53 \|\| tcp\.port == 53" in note
     assert note.count("S0:") == 1
     assert "SF:" not in note
+    assert r"S0: 연결을 시작했지만 응답을 받지 못했습니다\." in note
     evidence = re.search(r"근거: ([\d, ]+);", note)
     assert evidence and evidence.group(1).strip()
     assert openssh_log.read_text(encoding="utf-8").splitlines()[0] not in note
     assert all(expander.proto.expanded is False for expander in app.expander)
+
+
+def test_note_contains_alert_only_after_its_card_is_shown(openssh_log, dns_cap, monkeypatch):
+    downloads = {}
+    download_button = st.download_button
+
+    def capture_download(label, data, *args, **kwargs):
+        downloads[label] = data
+        return download_button(label, data, *args, **kwargs)
+
+    monkeypatch.setattr(st, "download_button", capture_download)
+    app = AppTest.from_file(str(ROOT / "app.py"))
+    app.session_state["sub_log"] = "표"
+    app.run(timeout=30)
+    app = _upload(app, 0, "OpenSSH_2k.log", openssh_log)
+    app.number_input[0].set_value(2023)
+    app.run(timeout=30)
+    app.run(timeout=30)
+    assert "같은 IP의 SSH 로그인 실패 반복" not in downloads["공부 노트 내보내기"]
+
+    app = AppTest.from_file(str(ROOT / "app.py")).run(timeout=30)
+    app = _upload(app, 0, "OpenSSH_2k.log", openssh_log)
+    app = _upload(app, 1, "dns.cap", dns_cap)
+    app.number_input[0].set_value(2023)
+    app.session_state["sub_packet"] = "표"
+    app.run(timeout=30)
+    app.run(timeout=30)
+    assert "같은 IP의 SSH 로그인 실패 반복" in downloads["공부 노트 내보내기"]
 
 
 def test_render_note_escapes_untrusted_markdown_and_html():
