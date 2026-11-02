@@ -48,6 +48,7 @@ from elpa.layer_help import (
     render_layer_help,
 )
 from elpa.learning import load_learning
+from elpa.notes import StudyNote, render_note
 
 HELP_PATH = Path(__file__).resolve().with_name("help.yaml")
 SEOUL = ZoneInfo("Asia/Seoul")
@@ -236,11 +237,31 @@ def _select_columns(tab, columns, records, *, kind_group=None, highlighted=None)
     selected = st.multiselect(
         "열 고르기", columns, key=key
     )
+    _render_help_terms()
     choice = ColumnChoice(tab, tuple(selected))
     rows = table_rows(
         records, choice, time_settings, kind_group=kind_group, highlighted=highlighted
     )
     return choice, rows
+
+
+def _note_log_add(kind: str, value: str) -> None:
+    log = st.session_state.setdefault("note_log", [])
+    entry = (kind, value)
+    if entry not in log:
+        log.append(entry)
+
+
+def _render_help_terms() -> None:
+    with st.expander("용어 도움말 (?)", expanded=False):
+        for group, terms in HELP.items():
+            for term, meaning in terms.items():
+                key = f"{group}.{term}"
+                if st.button(f"? {term}", key=f"help_term_{key}"):
+                    _note_log_add("term", key)
+                    st.session_state["open_help_term"] = key
+                if st.session_state.get("open_help_term") == key:
+                    st.write(meaning)
 
 
 def _filtered_records(records: list[Record], kind: str) -> list[Record]:
@@ -290,6 +311,10 @@ def _filtered_records(records: list[Record], kind: str) -> list[Record]:
             st.session_state[key] = conds
             st.rerun()
     filtered = apply_filters(records, conds)
+    table = load_filters()
+    ws_filter = to_wireshark(conds, table)
+    if ws_filter:
+        _note_log_add("filter", ws_filter)
     if not filtered and conds:
         _show_empty_records(f"{key}_empty")
     return filtered
@@ -300,6 +325,9 @@ def _render_filter_commands(
 ) -> None:
     st.subheader("명령 번역")
     table = load_filters()
+    ws_filter = to_wireshark(conds, table)
+    if ws_filter:
+        _note_log_add("filter", ws_filter)
     for label, command in (
         ("Wireshark", to_wireshark(conds, table)),
         ("tshark", to_tshark(conds, table, filename)),
@@ -529,6 +557,41 @@ def _render_export_view(tab: str, columns: tuple[str, ...], records, filename: s
     return rows
 
 
+def _render_note_download(file_names: list[str], log_records, packet_records) -> None:
+    note_log = st.session_state.setdefault("note_log", [])
+    rules, _ = load_rules()
+    alerts = []
+    if log_records:
+        alerts.extend(
+            evaluate_rules(
+                log_records, rules, log_kind, time_settings,
+                log_result.unparsed if log_result else 0,
+            )
+        )
+    if packet_records:
+        alerts.extend(
+            evaluate_rules(
+                packet_records, rules, "pcap", time_settings,
+                packet_result.unparsed if packet_result else 0,
+            )
+        )
+    note = StudyNote(
+        file_names=file_names,
+        alerts=alerts,
+        filters=[value for kind, value in note_log if kind == "filter"],
+        terms=[value for kind, value in note_log if kind == "term"],
+        created_at=datetime.now(timezone.utc),
+    )
+    st.download_button(
+        "공부 노트 내보내기",
+        render_note(note),
+        file_name="study-note.md",
+        mime="text/markdown",
+        disabled=not file_names,
+        key="study_note_download",
+    )
+
+
 st.set_page_config(page_title="easy-log-packet-analyzer", layout="wide")
 st.title("easy-log-packet-analyzer")
 st.write("로그와 패킷을 한곳에서, 쉬운 한국어로")
@@ -587,6 +650,11 @@ with analysis_tab:
     metrics[2].metric("대화", len(conversations))
     metrics[3].metric("읽지 못한 줄", log_result.unparsed if log_result else 0)
     st.caption("로그·패킷·대화의 전체 건수입니다.")
+    _render_note_download(
+        [upload.name for upload in (log_upload, packet_upload) if upload],
+        log_records,
+        packet_records,
+    )
     st.write(_summary_time(log_records, packet_records, log_kind, time_settings))
     if not log_upload and not packet_upload:
         st.info("아직 파일이 없습니다")
