@@ -58,6 +58,22 @@ def test_note_download_has_alert_filter_term_and_evidence(openssh_log, dns_cap, 
     assert all(expander.proto.expanded is False for expander in app.expander)
 
 
+def test_filter_is_recorded_when_applied_not_when_export_commands_are_shown(dns_cap):
+    app = AppTest.from_file(str(ROOT / "app.py")).run(timeout=30)
+    app = _upload(app, 1, "dns.cap", dns_cap)
+    app.session_state["sub_packet"] = "내보내기·명령어"
+    app.run(timeout=30)
+    assert not any(kind == "filter" for kind, _ in app.session_state.get("note_log", []))
+
+    app.session_state["step6_패킷"] = [FilterCond("port", "==", "53")]
+    app.run(timeout=30)
+    assert not any(kind == "filter" for kind, _ in app.session_state["note_log"])
+
+    app.session_state["sub_packet"] = "표"
+    app.run(timeout=30)
+    assert ("filter", "udp.port == 53 || tcp.port == 53") in app.session_state["note_log"]
+
+
 def test_note_contains_alert_only_after_its_card_is_shown(openssh_log, dns_cap, monkeypatch):
     downloads = {}
     download_button = st.download_button

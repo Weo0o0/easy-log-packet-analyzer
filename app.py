@@ -328,9 +328,6 @@ def _render_filter_commands(
 ) -> None:
     st.subheader("명령 번역")
     table = load_filters()
-    ws_filter = to_wireshark(conds, table)
-    if ws_filter:
-        _note_log_add("filter", ws_filter)
     for label, command in (
         ("Wireshark", to_wireshark(conds, table)),
         ("tshark", to_tshark(conds, table, filename)),
