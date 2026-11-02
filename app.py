@@ -237,7 +237,7 @@ def _select_columns(tab, columns, records, *, kind_group=None, highlighted=None)
     selected = st.multiselect(
         "열 고르기", columns, key=key
     )
-    _render_help_terms()
+    _render_help_terms(tab)
     choice = ColumnChoice(tab, tuple(selected))
     rows = table_rows(
         records, choice, time_settings, kind_group=kind_group, highlighted=highlighted
@@ -252,12 +252,12 @@ def _note_log_add(kind: str, value: str) -> None:
         log.append(entry)
 
 
-def _render_help_terms() -> None:
+def _render_help_terms(scope: str) -> None:
     with st.expander("용어 도움말 (?)", expanded=False):
         for group, terms in HELP.items():
             for term, meaning in terms.items():
                 key = f"{group}.{term}"
-                if st.button(f"? {term}", key=f"help_term_{key}"):
+                if st.button(f"? {term}", key=f"help_term_{scope}_{key}"):
                     _note_log_add("term", key)
                     st.session_state["open_help_term"] = key
                 if st.session_state.get("open_help_term") == key:
