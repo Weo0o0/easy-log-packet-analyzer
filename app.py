@@ -48,6 +48,7 @@ from elpa.layer_help import (
     render_layer_help,
 )
 from elpa.learning import load_learning
+from elpa.notes import StudyNote, render_note
 
 HELP_PATH = Path(__file__).resolve().with_name("help.yaml")
 SEOUL = ZoneInfo("Asia/Seoul")
@@ -236,11 +237,34 @@ def _select_columns(tab, columns, records, *, kind_group=None, highlighted=None)
     selected = st.multiselect(
         "열 고르기", columns, key=key
     )
+    _render_help_terms(tab)
     choice = ColumnChoice(tab, tuple(selected))
     rows = table_rows(
         records, choice, time_settings, kind_group=kind_group, highlighted=highlighted
     )
     return choice, rows
+
+
+def _note_log_add(kind: str, value: str) -> None:
+    log = st.session_state.setdefault("note_log", [])
+    keys = st.session_state.setdefault("note_log_keys", set(log))
+    entry = (kind, value)
+    # Keep the oldest 200 entries; later distinct entries are ignored.
+    if entry not in keys and len(log) < 200:
+        log.append(entry)
+        keys.add(entry)
+
+
+def _render_help_terms(scope: str) -> None:
+    with st.expander("용어 도움말 (?)", expanded=False):
+        for group, terms in HELP.items():
+            for term, meaning in terms.items():
+                key = f"{group}.{term}"
+                if st.button(f"? {term}", key=f"help_term_{scope}_{key}"):
+                    _note_log_add("term", key)
+                    st.session_state["open_help_term"] = key
+                if st.session_state.get("open_help_term") == key:
+                    st.write(meaning)
 
 
 def _filtered_records(records: list[Record], kind: str) -> list[Record]:
@@ -290,6 +314,10 @@ def _filtered_records(records: list[Record], kind: str) -> list[Record]:
             st.session_state[key] = conds
             st.rerun()
     filtered = apply_filters(records, conds)
+    table = load_filters()
+    ws_filter = to_wireshark(conds, table)
+    if ws_filter:
+        _note_log_add("filter", ws_filter)
     if not filtered and conds:
         _show_empty_records(f"{key}_empty")
     return filtered
@@ -332,7 +360,16 @@ def _render_alerts(
     if not alerts:
         st.text("규칙에 걸린 경고가 없습니다. 이것은 안전하다는 뜻이 아닙니다.")
     rule_by_id = {rule.id: rule for rule in rules}
+    shown = st.session_state.setdefault("note_alerts", [])
+    shown_keys = st.session_state.setdefault(
+        "note_alert_keys",
+        {(item.rule_id, item.msg, tuple(item.evidence)) for item in shown},
+    )
     for index, alert in enumerate(alerts):
+        alert_key = (alert.rule_id, alert.msg, tuple(alert.evidence))
+        if alert_key not in shown_keys and len(shown) < 200:
+            shown.append(alert)
+            shown_keys.add(alert_key)
         rule = rule_by_id[alert.rule_id]
         trust = f"[{alert.confidence}]"
         with st.expander(f"[{alert.level}] {trust} {alert.msg}", expanded=False):
@@ -498,8 +535,11 @@ def _subtab(name: str, labels: list[str]):
 
 
 def _clear_upload_links():
-    for key in ("time_center", "time_link_from", "prev_log_rows", "prev_packet_rows", "step7_conversation_highlights", "step7_log_highlights", "step7_packet_highlights"):
+    for key in ("time_center", "time_link_from", "prev_log_rows", "prev_packet_rows", "step7_conversation_highlights", "step7_log_highlights", "step7_packet_highlights", "note_alerts", "note_alert_keys"):
         st.session_state.pop(key, None)
+    if "note_log" in st.session_state:
+        st.session_state["note_log"] = [entry for entry in st.session_state["note_log"] if entry[0] != "filter"]
+        st.session_state["note_log_keys"] = set(st.session_state["note_log"])
     for key in ("log_table_version", "packet_table_version", "conversation_table_version"):
         st.session_state[key] = st.session_state.get(key, 0) + 1
 
@@ -527,6 +567,25 @@ def _render_export_view(tab: str, columns: tuple[str, ...], records, filename: s
     with st.expander("명령 번역", expanded=False):
         _render_filter_commands(conds or [], filename, awk_ok)
     return rows
+
+
+def _render_note_download(file_names: list[str]) -> None:
+    note_log = st.session_state.setdefault("note_log", [])
+    note = StudyNote(
+        file_names=file_names,
+        alerts=st.session_state.get("note_alerts", []),
+        filters=[value for kind, value in note_log if kind == "filter"],
+        terms=[value for kind, value in note_log if kind == "term"],
+        created_at=datetime.now(timezone.utc),
+    )
+    st.download_button(
+        "공부 노트 내보내기",
+        render_note(note),
+        file_name="study-note.md",
+        mime="text/markdown",
+        disabled=not file_names,
+        key="study_note_download",
+    )
 
 
 st.set_page_config(page_title="easy-log-packet-analyzer", layout="wide")
@@ -587,6 +646,9 @@ with analysis_tab:
     metrics[2].metric("대화", len(conversations))
     metrics[3].metric("읽지 못한 줄", log_result.unparsed if log_result else 0)
     st.caption("로그·패킷·대화의 전체 건수입니다.")
+    _render_note_download(
+        [upload.name for upload in (log_upload, packet_upload) if upload],
+    )
     st.write(_summary_time(log_records, packet_records, log_kind, time_settings))
     if not log_upload and not packet_upload:
         st.info("아직 파일이 없습니다")
